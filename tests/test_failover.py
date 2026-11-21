@@ -99,3 +99,4 @@ def test_everything_down_reports_both_providers_without_leaking_the_key():
     message = str(info.value)
     assert "gemini" in message and "groq" in message
     assert KEY not in message
+    assert "gemini: gemini:" not in message and "groq: groq:" not in message

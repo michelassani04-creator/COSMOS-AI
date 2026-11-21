@@ -93,6 +93,11 @@ class HttpLLMProvider:
             raise AuthenticationError(f"{self.name}: clé d'API refusée (HTTP {status})")
         if status == 408 or status >= 500:
             raise ProviderUnavailable(f"{self.name}: service indisponible (HTTP {status})")
+        if status == 404:
+            raise LLMError(
+                f"{self.name}: modèle {self.model!r} introuvable ou inaccessible pour ce compte "
+                "(vérifie « model » dans config.yaml, voir docs/fournisseurs-ia.md)"
+            )
         raise LLMError(f"{self.name}: HTTP {status} : {self._snippet(resp.body)}")
 
     def _parse_success(self, body: str) -> str:

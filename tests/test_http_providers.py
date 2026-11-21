@@ -158,7 +158,7 @@ def test_groq_request_shape_and_response():
     call = t.calls[0]
     assert call["url"] == "https://api.groq.com/openai/v1/chat/completions"
     assert call["headers"]["Authorization"] == f"Bearer {KEY}"
-    assert call["payload"]["model"] == "llama-3.3-70b-versatile"
+    assert call["payload"]["model"] == "openai/gpt-oss-20b"
     assert call["payload"]["messages"] == [
         {"role": "system", "content": "Sois bref"},
         {"role": "user", "content": "Parle de Mars"},
@@ -167,10 +167,10 @@ def test_groq_request_shape_and_response():
 
 def test_groq_without_system_message():
     t = FakeTransport(ok_groq())
-    p, _ = make(GroqProvider, t, model="openai/gpt-oss-20b")
+    p, _ = make(GroqProvider, t, model="openai/gpt-oss-120b")
     p.generate("x")
     assert t.calls[0]["payload"]["messages"] == [{"role": "user", "content": "x"}]
-    assert t.calls[0]["payload"]["model"] == "openai/gpt-oss-20b"
+    assert t.calls[0]["payload"]["model"] == "openai/gpt-oss-120b"
 
 
 def test_groq_rate_limit_reads_retry_after_header():
@@ -184,6 +184,16 @@ def test_groq_empty_choices_is_an_error():
     p, _ = make(GroqProvider, FakeTransport(resp(200, '{"choices": []}')))
     with pytest.raises(LLMError, match="inattendue ou vide"):
         p.generate("x")
+
+
+def test_unknown_model_gives_an_explicit_message_and_is_not_retried():
+    body = '{"error": {"code": "model_not_found", "message": "The model does not exist"}}'
+    t = FakeTransport(resp(404, body))
+    p, _ = make(GroqProvider, t, model="modele-disparu")
+    with pytest.raises(LLMError) as info:
+        p.generate("x")
+    assert "modele-disparu" in str(info.value) and "config.yaml" in str(info.value)
+    assert len(t.calls) == 1
 
 
 def test_groq_server_error_is_retried():

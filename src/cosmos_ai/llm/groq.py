@@ -7,7 +7,7 @@ from .base import HttpLLMProvider
 
 class GroqProvider(HttpLLMProvider):
     name = "groq"
-    default_model = "llama-3.3-70b-versatile"  # modèle « production » de Groq
+    default_model = "openai/gpt-oss-20b"  # présent dans la liste des modèles du compte
     default_env = "GROQ_API_KEY"
     url = "https://api.groq.com/openai/v1/chat/completions"
 

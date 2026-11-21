@@ -85,4 +85,5 @@ Quand l'agent tournera sur GitHub Actions, les clés seront enregistrées comme 
 | `clé d'API refusée (HTTP 401/403)` | Clé erronée, copiée avec un espace, ou révoquée |
 | `quota ou limite de débit atteint` | Limite gratuite atteinte : le routeur bascule sur le fournisseur suivant |
 | `délai de 30 s dépassé` | Connexion lente : augmente `timeout_seconds` |
+| `modèle ... introuvable ou inaccessible` | Le modèle n'existe plus ou n'est pas ouvert à ton compte : voir « Si un modèle est refusé » dans `docs/fournisseurs-ia.md` |
 | `Tous les fournisseurs ont échoué` | Aucun fournisseur disponible : lis le détail de chaque panne dans le message |

@@ -25,7 +25,7 @@ llm:
       max_retries: 1            # nouvelles tentatives si le service est indisponible
     - name: groq                # fournisseur secondaire
       enabled: true
-      model: ""                 # vide = modèle par défaut (llama-3.3-70b-versatile)
+      model: ""                 # vide = modèle par défaut (openai/gpt-oss-20b)
       api_key_env: GROQ_API_KEY
       timeout_seconds: 30
       max_retries: 1

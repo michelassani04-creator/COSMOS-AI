@@ -3,7 +3,7 @@
 | Rôle | Fournisseur | API utilisée | Modèle par défaut |
 |---|---|---|---|
 | Principal | Google Gemini | `generateContent` (REST, API officielle) | `gemini-3.1-flash-lite` |
-| Secondaire | Groq | `chat/completions` (compatible OpenAI) | `llama-3.3-70b-versatile` |
+| Secondaire | Groq | `chat/completions` (compatible OpenAI) | `openai/gpt-oss-20b` |
 
 Aucun abonnement payant n'est nécessaire : les deux ont une offre gratuite.
 
@@ -21,6 +21,25 @@ Aucun abonnement payant n'est nécessaire : les deux ont une offre gratuite.
 3. Copie la clé tout de suite : elle ne sera plus affichée en entier ensuite.
 
 Ensuite, déclare les deux clés comme indiqué dans `docs/installation.md`.
+
+## Si un modèle est refusé (erreur « modèle introuvable »)
+
+Les modèles changent et leur accès dépend du compte. Pour voir ceux que **ton** compte Groq peut utiliser (la clé n'est jamais affichée) :
+
+```bash
+python - <<'EOF'
+import os, json, urllib.request
+req = urllib.request.Request(
+    "https://api.groq.com/openai/v1/models",
+    headers={"Authorization": "Bearer " + os.environ["GROQ_API_KEY"], "User-Agent": "cosmos-ai/0.1"},
+)
+data = json.load(urllib.request.urlopen(req))["data"]
+print("\n".join(sorted(m["id"] for m in data)))
+EOF
+```
+
+Choisis un modèle de texte (pas `whisper-*`, qui transcrit de l'audio, ni les modèles « guard » ou « safeguard », qui servent à la modération), puis écris-le dans `config.yaml` : `model: "nom-du-modèle"`.
+Pour Gemini, la liste des modèles est visible dans Google AI Studio.
 
 ## Quotas gratuits
 

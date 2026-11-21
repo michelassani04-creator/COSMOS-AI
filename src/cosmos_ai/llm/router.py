@@ -12,6 +12,13 @@ from ..ports import LLMProvider
 log = logging.getLogger(__name__)
 
 
+def _reason(provider: LLMProvider, exc: Exception) -> str:
+    """Message de l'erreur sans le nom du fournisseur s'il y figure déjà."""
+    text = str(exc)
+    prefix = f"{provider.name}: "
+    return text[len(prefix):] if text.startswith(prefix) else text
+
+
 class LLMRouter:
     """Se comporte lui-même comme un LLMProvider : l'agent n'y voit que du feu."""
 
@@ -47,11 +54,13 @@ class LLMRouter:
             except QuotaExceeded as exc:
                 delay = exc.retry_after if exc.retry_after is not None else self._cooldown
                 self._blocked_until[provider.name] = self._clock() + max(delay, 1.0)
-                log.warning("%s : quota atteint, bascule (pause %.0f s)", provider.name, delay)
-                errors.append(f"{provider.name}: quota atteint ({exc})")
+                reason = _reason(provider, exc)
+                log.warning("%s : %s, bascule (pause %.0f s)", provider.name, reason, delay)
+                errors.append(f"{provider.name}: {reason}")
             except LLMError as exc:
-                log.warning("%s en échec, bascule : %s", provider.name, exc)
-                errors.append(f"{provider.name}: {exc}")
+                reason = _reason(provider, exc)
+                log.warning("%s en échec, bascule : %s", provider.name, reason)
+                errors.append(f"{provider.name}: {reason}")
             else:
                 self.last_used = provider.name
                 return text
