@@ -11,26 +11,31 @@ posts_per_day: 2
 similarity_threshold: 0.8   # au-dessus, un sujet est considéré comme déjà traité
 
 llm:
-  cooldown_seconds: 300     # pause d'un fournisseur dont le quota gratuit est atteint
-  # L'ordre de la liste = l'ordre d'essai. Le routeur bascule sur le suivant en cas d'échec.
+  # Pause d'un fournisseur dont le quota est atteint, si celui-ci n'indique pas
+  # lui-même quand réessayer.
+  cooldown_seconds: 300
+  # L'ordre de la liste = l'ordre d'essai. Le routeur bascule sur le suivant en cas
+  # de quota atteint, d'indisponibilité, de délai dépassé ou de clé refusée.
   providers:
-    - name: gemini
+    - name: gemini              # fournisseur principal
       enabled: true
-      model: ""             # à définir en phase 2 (les offres gratuites changent)
+      model: ""                 # vide = modèle par défaut (gemini-3.1-flash-lite)
       api_key_env: GEMINI_API_KEY
-    - name: groq
+      timeout_seconds: 30       # délai d'attente d'une requête
+      max_retries: 1            # nouvelles tentatives si le service est indisponible
+    - name: groq                # fournisseur secondaire
       enabled: true
-      model: ""
+      model: ""                 # vide = modèle par défaut (llama-3.3-70b-versatile)
       api_key_env: GROQ_API_KEY
+      timeout_seconds: 30
+      max_retries: 1
+    # Prévus pour plus tard (pas encore d'adaptateur) :
     - name: openrouter
-      enabled: true
-      model: ""
+      enabled: false
       api_key_env: OPENROUTER_API_KEY
-    - name: ollama          # modèle local, gratuit, sans clé
+    - name: ollama              # modèle local, gratuit, sans clé
       enabled: false
-      model: ""
       base_url: http://localhost:11434
-    - name: openai          # optionnel, désactivé tant qu'il n'y a pas de crédits
+    - name: openai              # optionnel, désactivé tant qu'il n'y a pas de crédits
       enabled: false
-      model: ""
       api_key_env: OPENAI_API_KEY

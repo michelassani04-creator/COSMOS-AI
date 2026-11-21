@@ -36,9 +36,11 @@ Chaque service externe est un adaptateur qui implémente un port. L'agent ne dé
 
 ## Fournisseurs d'IA
 
-- `LLMRouter` essaie les fournisseurs dans l'ordre de `config.yaml`.
-- Erreur normale : passage au suivant.
-- Quota atteint (`QuotaExceeded`) : le fournisseur est mis en pause (`cooldown_seconds`) puis réessayé.
+- `LLMRouter` essaie les fournisseurs dans l'ordre de `config.yaml` : Gemini (principal), puis Groq (secondaire).
+- Chaque fournisseur HTTP hérite de `HttpLLMProvider` : délai d'attente, nouvelles tentatives, traduction des erreurs HTTP, protection de la clé.
+- Erreur normale (indisponibilité, délai dépassé, clé refusée, réponse vide) : passage au suivant.
+- Quota atteint (`QuotaExceeded`) : le fournisseur est mis en pause pour le délai qu'il indique (sinon `cooldown_seconds`), puis réessayé.
+- Détail du comportement : `docs/fournisseurs-ia.md`.
 - Tous en échec : `AllProvidersFailed` avec le détail de chaque panne.
 - Le routeur est lui-même un `LLMProvider`.
 

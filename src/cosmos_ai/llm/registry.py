@@ -26,14 +26,21 @@ def register_provider(name: str, factory: Callable[[ProviderConfig], LLMProvider
 def build_provider(cfg: ProviderConfig) -> LLMProvider:
     factory = _FACTORIES.get(cfg.name)
     if factory is None:
-        raise ProviderNotAvailable(
-            f"aucun adaptateur enregistré pour {cfg.name!r} (prévu en phase 2)"
-        )
+        raise ProviderNotAvailable(f"{cfg.name}: aucun adaptateur disponible")
     return factory(cfg)
 
 
+def provider_status(cfg: ProviderConfig) -> str:
+    """Texte lisible : « prêt » ou la raison pour laquelle le fournisseur est inutilisable."""
+    try:
+        build_provider(cfg)
+    except ProviderNotAvailable as exc:
+        return str(exc)
+    return "prêt"
+
+
 def build_router(llm_cfg: LLMConfig) -> LLMRouter:
-    """Construit le routeur avec les fournisseurs activés et disponibles."""
+    """Construit le routeur avec les fournisseurs activés et utilisables, dans l'ordre."""
     providers: list[LLMProvider] = []
     for cfg in llm_cfg.enabled_providers:
         try:
@@ -41,5 +48,5 @@ def build_router(llm_cfg: LLMConfig) -> LLMRouter:
         except ProviderNotAvailable as exc:
             log.warning("fournisseur ignoré : %s", exc)
     if not providers:
-        raise ProviderNotAvailable("aucun fournisseur d'IA utilisable")
+        raise ProviderNotAvailable("aucun fournisseur d'IA utilisable (clés d'API absentes ?)")
     return LLMRouter(providers, cooldown_seconds=llm_cfg.cooldown_seconds)

@@ -21,6 +21,8 @@ class ProviderConfig:
     model: str = ""
     api_key_env: str | None = None
     base_url: str | None = None
+    timeout_seconds: float = 30.0
+    max_retries: int = 1
 
     def api_key(self, environ: Mapping[str, str] | None = None) -> str | None:
         """Lit la clé dans l'environnement (jamais dans le fichier)."""
@@ -49,6 +51,30 @@ class AppConfig:
     llm: LLMConfig = field(default_factory=LLMConfig)
 
 
+def _parse_provider(raw: Mapping) -> ProviderConfig:
+    name = raw.get("name")
+    if not name:
+        raise ConfigError("chaque fournisseur doit avoir un 'name'")
+
+    timeout = raw.get("timeout_seconds", 30)
+    if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or timeout <= 0:
+        raise ConfigError(f"{name}: timeout_seconds doit être un nombre > 0")
+
+    retries = raw.get("max_retries", 1)
+    if isinstance(retries, bool) or not isinstance(retries, int) or not 0 <= retries <= 5:
+        raise ConfigError(f"{name}: max_retries doit être un entier entre 0 et 5")
+
+    return ProviderConfig(
+        name=name,
+        enabled=bool(raw.get("enabled", True)),
+        model=raw.get("model") or "",
+        api_key_env=raw.get("api_key_env"),
+        base_url=raw.get("base_url"),
+        timeout_seconds=float(timeout),
+        max_retries=retries,
+    )
+
+
 def parse_config(data: Mapping) -> AppConfig:
     mode = data.get("mode", "manual")
     if mode not in VALID_MODES:
@@ -66,21 +92,11 @@ def parse_config(data: Mapping) -> AppConfig:
     providers: list[ProviderConfig] = []
     seen: set[str] = set()
     for raw in llm_data.get("providers") or []:
-        name = raw.get("name")
-        if not name:
-            raise ConfigError("chaque fournisseur doit avoir un 'name'")
-        if name in seen:
-            raise ConfigError(f"fournisseur en double : {name}")
-        seen.add(name)
-        providers.append(
-            ProviderConfig(
-                name=name,
-                enabled=bool(raw.get("enabled", True)),
-                model=raw.get("model") or "",
-                api_key_env=raw.get("api_key_env"),
-                base_url=raw.get("base_url"),
-            )
-        )
+        provider = _parse_provider(raw)
+        if provider.name in seen:
+            raise ConfigError(f"fournisseur en double : {provider.name}")
+        seen.add(provider.name)
+        providers.append(provider)
 
     llm = LLMConfig(
         providers=tuple(providers),
