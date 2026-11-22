@@ -39,6 +39,20 @@ def _lower(headers) -> dict[str, str]:
     return {k.lower(): v for k, v in headers.items()}
 
 
+def _read_all(stream) -> bytes:
+    """Lit jusqu'à la fin de la réponse (un seul read() peut renvoyer un morceau seulement)."""
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = stream.read(65536)
+        if not chunk:
+            return b"".join(chunks)
+        total += len(chunk)
+        if total > MAX_BODY_BYTES:
+            raise TransportError("réponse trop volumineuse")
+        chunks.append(chunk)
+
+
 class UrllibTransport:
     def post_json(
         self, url: str, headers: Mapping[str, str], payload: dict, timeout: float
@@ -67,12 +81,13 @@ class UrllibTransport:
     def _send(request: urllib.request.Request, timeout: float) -> HttpResponse:
         try:
             with urllib.request.urlopen(request, timeout=timeout) as resp:
-                raw = resp.read(MAX_BODY_BYTES + 1)
-                if len(raw) > MAX_BODY_BYTES:
-                    raise TransportError("réponse trop volumineuse")
+                raw = _read_all(resp)
                 return HttpResponse(resp.status, _lower(resp.headers), raw.decode("utf-8", "replace"))
         except urllib.error.HTTPError as exc:  # réponse HTTP d'erreur : on la remonte telle quelle
-            body = exc.read(MAX_BODY_BYTES).decode("utf-8", "replace")
+            try:
+                body = _read_all(exc).decode("utf-8", "replace")
+            except TransportError:
+                body = ""
             return HttpResponse(exc.code, _lower(exc.headers), body)
         except (urllib.error.URLError, OSError) as exc:
             reason = getattr(exc, "reason", exc)
