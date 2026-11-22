@@ -120,10 +120,14 @@ class RssNewsSource:
         self._timeout = timeout
 
     def fetch(self, limit: int = 10) -> list[NewsItem]:
-        try:
-            response = self._transport.get(self.url, {}, self._timeout)
-        except TransportError as exc:
-            raise FeedError(f"{self.name}: {exc}") from None
+        response = None
+        for attempt in range(2):  # une coupure réseau passagère mérite une seconde chance
+            try:
+                response = self._transport.get(self.url, {}, self._timeout)
+                break
+            except TransportError as exc:
+                if attempt == 1 or exc.timeout:
+                    raise FeedError(f"{self.name}: {exc}") from None
         if not 200 <= response.status < 300:
             raise FeedError(f"{self.name}: HTTP {response.status}")
         return parse_feed(response.body, self.name, self.publisher)[:limit]

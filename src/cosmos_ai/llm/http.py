@@ -53,6 +53,22 @@ def _read_all(stream) -> bytes:
         chunks.append(chunk)
 
 
+def _decode_body(raw: bytes, encoding: str | None) -> bytes:
+    """Décompresse une réponse gzip, avec la même limite de taille après décompression."""
+    if (encoding or "").lower() != "gzip":
+        return raw
+    import zlib
+
+    try:
+        decoder = zlib.decompressobj(16 + zlib.MAX_WBITS)
+        out = decoder.decompress(raw, MAX_BODY_BYTES + 1)
+        if len(out) > MAX_BODY_BYTES or decoder.unconsumed_tail:
+            raise TransportError("réponse trop volumineuse")
+        return out
+    except zlib.error:
+        raise TransportError("réponse compressée illisible") from None
+
+
 class UrllibTransport:
     def post_json(
         self, url: str, headers: Mapping[str, str], payload: dict, timeout: float
@@ -71,6 +87,7 @@ class UrllibTransport:
             headers={
                 "User-Agent": USER_AGENT,
                 "Accept": "application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
+                "Accept-Encoding": "gzip",
                 **headers,
             },
             method="GET",
@@ -81,7 +98,7 @@ class UrllibTransport:
     def _send(request: urllib.request.Request, timeout: float) -> HttpResponse:
         try:
             with urllib.request.urlopen(request, timeout=timeout) as resp:
-                raw = _read_all(resp)
+                raw = _decode_body(_read_all(resp), resp.headers.get("Content-Encoding"))
                 return HttpResponse(resp.status, _lower(resp.headers), raw.decode("utf-8", "replace"))
         except urllib.error.HTTPError as exc:  # réponse HTTP d'erreur : on la remonte telle quelle
             try:
