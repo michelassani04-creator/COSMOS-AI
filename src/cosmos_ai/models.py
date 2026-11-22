@@ -13,6 +13,7 @@ class NewsItem:
     source: str
     summary: str = ""
     published: datetime | None = None
+    publisher: str = ""  # éditeur réel (ex. « NASA » pour plusieurs flux NASA) ; vide = source
 
 
 @dataclass

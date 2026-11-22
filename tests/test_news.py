@@ -4,6 +4,7 @@ import pytest
 from fakes import FakeTransport, resp
 
 from cosmos_ai.errors import FeedError
+from cosmos_ai.models import NewsItem
 from cosmos_ai.llm.http import TransportError
 from cosmos_ai.news import RssNewsSource, collect, parse_feed
 
@@ -90,3 +91,39 @@ def test_collect_skips_broken_sources_and_reports_them():
     report = collect([bad, good])
     assert len(report.items) == 2
     assert list(report.errors) == ["Mauvais"]
+
+
+def test_publisher_defaults_to_source_name_and_can_be_overridden():
+    assert parse_feed(RSS, "NASA")[0].publisher == "NASA"
+    assert parse_feed(RSS, "NASA communiqués", publisher="NASA")[0].publisher == "NASA"
+    source = RssNewsSource("ESA flux", "https://a.org/f", transport=FakeTransport(resp(200, RSS)),
+                           publisher="ESA")
+    assert source.fetch()[0].publisher == "ESA"
+
+
+def test_collect_keeps_an_article_published_by_two_feeds_only_once():
+    general = RssNewsSource("NASA", "https://a.org/1", transport=FakeTransport(resp(200, RSS)))
+    releases = RssNewsSource("NASA communiqués", "https://a.org/2", transport=FakeTransport(resp(200, RSS)))
+    report = collect([general, releases])
+    urls = [i.url for i in report.items if i.url]
+    assert urls == ["https://exemple.org/webb"]
+    assert report.items[0].source == "NASA"  # le premier flux est conservé
+
+
+def test_collect_counts_items_per_source():
+    class Fixed:
+        def __init__(self, name, n):
+            self.name, self.n = name, n
+
+        def fetch(self, limit=10):
+            return [NewsItem(title=f"{self.name} {i}", url=f"https://x/{self.name}/{i}", source=self.name) for i in range(self.n)]
+
+    class Broken:
+        name = "KO"
+
+        def fetch(self, limit=10):
+            raise FeedError("KO: HTTP 404")
+
+    report = collect([Fixed("A", 2), Broken(), Fixed("B", 3)])
+    assert report.counts == {"A": 2, "B": 3}
+    assert "KO" in report.errors and len(report.items) == 5

@@ -14,6 +14,11 @@ DATA_WARNING = (
 )
 
 
+def fence(text: str) -> str:
+    """Neutralise les balises de données dans un texte venu d'Internet (anti-injection)."""
+    return text.replace(DATA_OPEN, "[balise retirée]").replace(DATA_CLOSE, "[balise retirée]")
+
+
 def word_limits(cfg: ContentConfig) -> tuple[int, int, int]:
     """Nombre de mots (minimum, cible, maximum) pour tenir dans la durée voulue."""
     return (
@@ -58,7 +63,7 @@ def choose_prompt(candidates: list[tuple[str, list[str], str]], recent_topics: l
     recent = "\n".join(f"- {t}" for t in recent_topics) or "(aucun)"
     return (
         "Voici des actualités spatiales récentes, déjà classées par popularité.\n"
-        f"{DATA_OPEN}\n" + "\n".join(lines) + f"\n{DATA_CLOSE}\n\n"
+        f"{DATA_OPEN}\n" + fence("\n".join(lines)) + f"\n{DATA_CLOSE}\n\n"
         f"Sujets déjà traités récemment (à ne pas répéter) :\n{recent}\n\n"
         "Choisis le sujet qui convient le mieux à la page : fiable, vérifiable, riche en curiosité, "
         "et pas déjà traité. Réponds UNIQUEMENT par un objet JSON de la forme "
@@ -72,10 +77,19 @@ def script_prompt(
     low, target, high = word_limits(cfg)
     if source_text:
         material = (
-            f"Actualité de départ (sources) :\n{DATA_OPEN}\n{source_text}\n{DATA_CLOSE}\n\n"
+            f"Actualité de départ (sources) :\n{DATA_OPEN}\n{fence(source_text)}\n{DATA_CLOSE}\n\n"
             "Appuie-toi UNIQUEMENT sur ce que disent ces sources et sur des connaissances "
-            "scientifiques établies. N'ajoute aucun chiffre, aucune date, aucun nom que tu ne peux "
-            "pas justifier."
+            "scientifiques établies.\n"
+            "- Chaque chiffre, date et nom propre du script doit figurer dans les sources. "
+            "Reprends les ordres de grandeur tels qu'ils y sont formulés (« environ », « plus de ») "
+            "sans les durcir ni les arrondir.\n"
+            "- N'attribue pas à l'objet étudié des propriétés (type de rayonnement, instrument, "
+            "méthode) que les sources ne mentionnent pas.\n"
+            "- Privilégie les détails concrets des sources (chiffres, durées, nom de l'équipe ou "
+            "de l'institution) plutôt que des généralités. Attribue les résultats à l'équipe ou "
+            "à l'institution, sans inventer de citation.\n"
+            "- Pas de superlatif ni de mot emphatique (révolutionnaire, inédit, incroyable, "
+            "extraordinaire…) sauf si la source l'emploie elle-même."
         )
     else:
         material = (
@@ -102,17 +116,21 @@ def script_prompt(
 
 def review_prompt(topic: str, script: str, source_text: str) -> str:
     source = (
-        f"Sources de départ :\n{DATA_OPEN}\n{source_text}\n{DATA_CLOSE}\n\n"
+        f"Sources de départ :\n{DATA_OPEN}\n{fence(source_text)}\n{DATA_CLOSE}\n\n"
         if source_text
         else "Aucune source d'actualité n'était fournie : juge d'après les connaissances établies.\n\n"
     )
     return (
-        "Tu es relecteur scientifique. Vérifie ce script de Reel.\n\n"
+        "Tu es relecteur scientifique, strict et sceptique. Vérifie ce script de Reel phrase par "
+        "phrase.\n\n"
         f"Sujet : {topic}\n\n{source}"
-        f"Script :\n{DATA_OPEN}\n{script}\n{DATA_CLOSE}\n\n"
-        "Cherche : erreurs factuelles, chiffres ou dates douteux ou non présents dans les sources, "
-        "hypothèses présentées comme des faits, citations de personnes, formulations "
-        "sensationnalistes ou trompeuses, ton non conforme.\n"
+        f"Script :\n{DATA_OPEN}\n{fence(script)}\n{DATA_CLOSE}\n\n"
+        "Pour CHAQUE phrase, vérifie qu'elle est soutenue par les sources. Signale chaque "
+        "affirmation qui n'y figure pas (propriété attribuée à l'objet étudié, précision, "
+        "portée ou conséquence ajoutées), chaque chiffre ou date absent des sources ou durci "
+        "(« environ un million » devenu « un million »), toute erreur factuelle, toute hypothèse "
+        "présentée comme un fait, toute citation de personne, toute formulation sensationnaliste "
+        "ou emphatique, tout écart de ton. Le doute doit être signalé.\n"
         "Réponds UNIQUEMENT par un objet JSON de la forme :\n"
         '{"verdict": "ok" ou "a_corriger", "problemes": ["<problème précis>", ...], '
         '"script_corrige": "<script entier corrigé, uniquement si verdict = a_corriger>"}'

@@ -28,12 +28,23 @@ class Candidate:
 
     @property
     def sources(self) -> list[str]:
-        return sorted({item.source for item in self.items})
+        return sorted({_who(item) for item in self.items})
+
+
+def _who(item: NewsItem) -> str:
+    """Éditeur indépendant : deux flux de la NASA comptent pour une seule source."""
+    return item.publisher or item.source
 
 
 def _norm(text: str) -> str:
     decomposed = unicodedata.normalize("NFKD", text.lower())
     return "".join(c for c in decomposed if not unicodedata.combining(c))
+
+
+def matches_any(keywords: Iterable[str], text: str) -> bool:
+    """Un des mots figure-t-il dans le texte (sans tenir compte de la casse ni des accents) ?"""
+    haystack = _norm(text)
+    return any(_norm(keyword) in haystack for keyword in keywords)
 
 
 def _keyword_hits(keywords: Iterable[str], text: str) -> int:
@@ -73,7 +84,7 @@ def rank(
 
     candidates = []
     for cluster in clusters:
-        n_sources = len({item.source for item in cluster})
+        n_sources = len({_who(item) for item in cluster})
         text = _norm(" ".join(f"{item.title} {item.summary}" for item in cluster))
         hits = _keyword_hits(keywords, text)
         dates = [item.published for item in cluster if item.published]

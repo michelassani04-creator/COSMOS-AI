@@ -65,12 +65,20 @@ def _cmd_news(config: AppConfig) -> int:
         print("Aucune source activée dans config.yaml.")
         return 1
     report = news.collect(sources)
-    print(f"{len(report.items)} actualités lues.")
-    for name, error in report.errors.items():
-        print(f"  Source en panne : {error}")
-    ranked = trends.rank(
-        report.items, config.content.interest_keywords, max_age_days=config.content.max_age_days
-    )
+    print("Sources :")
+    for source in sources:
+        if source.name in report.counts:
+            print(f"  OK  {source.name} : {report.counts[source.name]} actualités")
+        else:
+            print(f"  Source en panne : {report.errors.get(source.name, source.name)}")
+    print(f"{len(report.items)} actualités retenues (doublons retirés).")
+    ranked = [
+        c
+        for c in trends.rank(
+            report.items, config.content.interest_keywords, max_age_days=config.content.max_age_days
+        )
+        if not trends.matches_any(config.content.exclude_keywords, c.title)
+    ]
     if not ranked:
         print("Aucun sujet récent trouvé.")
         return 0 if not report.errors else 1

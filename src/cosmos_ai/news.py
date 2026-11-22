@@ -64,7 +64,7 @@ def _parse_date(value: str) -> datetime | None:
     return parsed.astimezone(timezone.utc)
 
 
-def parse_feed(xml_text: str, source: str) -> list[NewsItem]:
+def parse_feed(xml_text: str, source: str, publisher: str = "") -> list[NewsItem]:
     """Lit un flux RSS 2.0 ou Atom. Refuse les DTD/entités (attaques par expansion XML)."""
     upper = xml_text.upper()
     if "<!DOCTYPE" in upper or "<!ENTITY" in upper:
@@ -91,16 +91,31 @@ def parse_feed(xml_text: str, source: str) -> list[NewsItem]:
             or _child_text(element, "published")
             or _child_text(element, "updated")
         )
-        items.append(NewsItem(title=title, url=_link(element), source=source, summary=summary, published=date))
+        items.append(
+            NewsItem(
+                title=title,
+                url=_link(element),
+                source=source,
+                summary=summary,
+                published=date,
+                publisher=publisher or source,
+            )
+        )
     return items
 
 
 class RssNewsSource:
     def __init__(
-        self, name: str, url: str, transport: Transport | None = None, timeout: float = 15.0
+        self,
+        name: str,
+        url: str,
+        transport: Transport | None = None,
+        timeout: float = 15.0,
+        publisher: str = "",
     ) -> None:
         self.name = name
         self.url = url
+        self.publisher = publisher or name
         self._transport = transport or UrllibTransport()
         self._timeout = timeout
 
@@ -111,22 +126,35 @@ class RssNewsSource:
             raise FeedError(f"{self.name}: {exc}") from None
         if not 200 <= response.status < 300:
             raise FeedError(f"{self.name}: HTTP {response.status}")
-        return parse_feed(response.body, self.name)[:limit]
+        return parse_feed(response.body, self.name, self.publisher)[:limit]
 
 
 @dataclass
 class NewsReport:
     items: list[NewsItem] = field(default_factory=list)
     errors: dict[str, str] = field(default_factory=dict)
+    counts: dict[str, int] = field(default_factory=dict)  # actualités lues par source qui répond
 
 
 def collect(sources: Sequence[NewsSource], per_source: int = 15) -> NewsReport:
-    """Lit toutes les sources ; une source en panne n'empêche pas les autres."""
+    """Lit toutes les sources ; une source en panne n'empêche pas les autres.
+
+    Un même article publié par plusieurs flux (même adresse) n'est gardé qu'une fois.
+    """
     report = NewsReport()
+    seen: set[str] = set()
     for source in sources:
         try:
-            report.items.extend(source.fetch(per_source))
+            fetched = source.fetch(per_source)
         except FeedError as exc:
             log.warning("source ignorée : %s", exc)
             report.errors[source.name] = str(exc)
+            continue
+        report.counts[source.name] = len(fetched)
+        for item in fetched:
+            if item.url:
+                if item.url in seen:
+                    continue
+                seen.add(item.url)
+            report.items.append(item)
     return report

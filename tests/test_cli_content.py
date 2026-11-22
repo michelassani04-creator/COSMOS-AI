@@ -43,6 +43,11 @@ def test_shipped_config_carries_the_editorial_identity():
     assert len(cfg.editorial.rules) == 7 and len(cfg.editorial.priority_topics) == 8
     assert "Soleil" in cfg.editorial.example
     assert all(s.url.startswith("https://") for s in cfg.sources)
+    assert not any("esa.int/rssfeed" in s.url for s in cfg.sources)  # ancien flux ESA : 404
+    nasa = [s for s in cfg.sources if s.name.startswith("NASA")]
+    assert len(nasa) == 3 and {s.publisher for s in nasa} == {"NASA"}
+    assert "challenge:" in cfg.exclude_keywords and "ceremony" in cfg.exclude_keywords
+    assert cfg.fetch_articles is True
 
 
 def _content(**over):
@@ -59,6 +64,10 @@ def _content(**over):
     {"sources": [{"name": "X", "url": "https://a.org"}, {"name": "X", "url": "https://b.org"}]},
     {"interest_keywords": "pas une liste"},
     {"editorial": {"rules": [""]}},
+    {"exclude_keywords": "pas une liste"},
+    {"exclude_keywords": [{"challenge": None}]},  # piège YAML : « - challenge: » sans guillemets
+    {"fetch_articles": "oui"},
+    {"sources": [{"name": "X", "url": "https://a.org", "publisher": 5}]},
 ])
 def test_invalid_content_settings_are_rejected(bad):
     with pytest.raises(ConfigError):
@@ -75,7 +84,7 @@ def test_news_command_ranks_topics(config_file, monkeypatch, capsys):
     patch_network(monkeypatch)
     assert cli.main(["--config", config_file, "news"]) == 0
     out = capsys.readouterr().out
-    assert "Trou noir géant observé" in out and "actualités lues" in out
+    assert "Trou noir géant observé" in out and "actualités retenues" in out
 
 
 def test_news_command_reports_broken_sources(config_file, monkeypatch, capsys):
@@ -128,3 +137,15 @@ def test_drafts_show_and_reject(config_file, capsys):
     assert cli.main(["--config", config_file, "reject", "1"]) == 0
     assert cli.main(["--config", config_file, "reject", "1"]) == 1  # déjà écarté
     assert cli.main(["--config", config_file, "show", "99"]) == 1
+
+
+def test_news_command_hides_excluded_topics(config_file, monkeypatch, capsys):
+    date = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%a, %d %b %Y %H:%M:%S +0000")
+    body = ("<rss><channel>"
+            f"<item><title>NASA Honor Awards Ceremony Recognizes Employees</title><link>https://x.org/a</link><pubDate>{date}</pubDate></item>"
+            f"<item><title>Trou noir géant observé</title><link>https://x.org/b</link><pubDate>{date}</pubDate></item>"
+            "</channel></rss>")
+    patch_network(monkeypatch, body=body)
+    assert cli.main(["--config", config_file, "news"]) == 0
+    out = capsys.readouterr().out
+    assert "Trou noir géant observé" in out and "Honor Awards" not in out

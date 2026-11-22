@@ -20,6 +20,7 @@ class CycleContext:
     news: list[NewsItem] = field(default_factory=list)
     candidates: list[Candidate] = field(default_factory=list)
     topic: str | None = None
+    primary_url: str = ""  # adresse de l'article principal du sujet choisi
     source_text: str = ""  # actualités utilisées, transmises à l'IA comme données
     sources: str = ""  # références lisibles, conservées dans le brouillon
     script: str | None = None

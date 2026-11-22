@@ -50,6 +50,7 @@ class SourceConfig:
     name: str
     url: str
     enabled: bool = True
+    publisher: str = ""  # éditeur réel : plusieurs flux d'un même organisme comptent pour un
 
 
 @dataclass(frozen=True)
@@ -77,7 +78,9 @@ class VisualConfig:
 class ContentConfig:
     sources: tuple[SourceConfig, ...] = ()
     interest_keywords: tuple[str, ...] = ()
+    exclude_keywords: tuple[str, ...] = ()
     evergreen_topics: tuple[str, ...] = ()
+    fetch_articles: bool = True
     max_age_days: int = 14
     candidates: int = 5
     tone: str = "tu"
@@ -154,7 +157,17 @@ def _parse_content(data: Mapping) -> ContentConfig:
         if name in seen:
             raise ConfigError(f"source en double : {name}")
         seen.add(name)
-        sources.append(SourceConfig(name=name, url=url, enabled=bool(raw.get("enabled", True))))
+        publisher = raw.get("publisher") or ""
+        if not isinstance(publisher, str):
+            raise ConfigError(f"source {name} : publisher doit être un texte")
+        sources.append(
+            SourceConfig(
+                name=name,
+                url=url,
+                enabled=bool(raw.get("enabled", True)),
+                publisher=publisher.strip(),
+            )
+        )
 
     tone = data.get("tone", "tu")
     if tone not in VALID_TONES:
@@ -186,10 +199,16 @@ def _parse_content(data: Mapping) -> ContentConfig:
         style=_str_list(vis.get("style"), "content.visual.style"),
     )
 
+    fetch_articles = data.get("fetch_articles", True)
+    if not isinstance(fetch_articles, bool):
+        raise ConfigError("content.fetch_articles doit valoir true ou false")
+
     return ContentConfig(
         sources=tuple(sources),
         interest_keywords=_str_list(data.get("interest_keywords"), "content.interest_keywords"),
+        exclude_keywords=_str_list(data.get("exclude_keywords"), "content.exclude_keywords"),
         evergreen_topics=_str_list(data.get("evergreen_topics"), "content.evergreen_topics"),
+        fetch_articles=fetch_articles,
         max_age_days=_int_between(data, "max_age_days", 14, 1, 90),
         candidates=_int_between(data, "candidates", 5, 1, 10),
         tone=tone,

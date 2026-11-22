@@ -53,3 +53,17 @@ def test_items_without_date_are_kept_with_lowest_freshness():
 
 def test_empty_input():
     assert rank([], now=NOW) == []
+
+
+def test_two_feeds_of_the_same_publisher_count_as_one_source():
+    def same(title, source, publisher):
+        return NewsItem(title=title, url=f"https://x.org/{source}", source=source, publisher=publisher,
+                        published=NOW - timedelta(days=1))
+
+    one_publisher = rank([same("Curiosity spots drifting twilight clouds", "NASA", "NASA"),
+                          same("Curiosity spots drifting twilight clouds", "NASA communiqués", "NASA")], now=NOW)
+    two_publishers = rank([same("Curiosity spots drifting twilight clouds", "NASA", "NASA"),
+                           same("Curiosity spots drifting twilight clouds", "Space.com", "Space.com")], now=NOW)
+    assert one_publisher[0].sources == ["NASA"]
+    assert two_publishers[0].sources == ["NASA", "Space.com"]
+    assert two_publishers[0].score > one_publisher[0].score

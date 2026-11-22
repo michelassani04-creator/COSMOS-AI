@@ -1,4 +1,5 @@
-"""Étapes de contenu de l'agent : veille, tendances, choix du sujet, scénario, vérification."""
+"""Étapes de contenu de l'agent : veille, tendances, choix du sujet, lecture de l'article,
+scénario, vérification."""
 
 from __future__ import annotations
 
@@ -8,8 +9,10 @@ from typing import Sequence
 
 from . import news as news_module
 from . import prompts, trends
+from .article import fetch_article_text
 from .config import AppConfig, ContentConfig
 from .errors import ContentError, LLMError
+from .llm.http import Transport, UrllibTransport
 from .llm_json import extract_json
 from .models import Draft
 from .pipeline import CycleContext, Step
@@ -18,30 +21,62 @@ from .ports import LLMProvider, NewsSource
 log = logging.getLogger(__name__)
 
 _QUOTE = re.compile(r"«[^»]{3,}»|“[^”]{3,}”|\"[^\"]{3,}\"")
+_NUMBER = re.compile(r"\d+(?:[   .,]\d{3})*(?:[.,]\d+)?")
 _SENSATIONAL = (
-    "choquant", "vous ne croirez", "tu ne croiras", "incroyable vérité", "ce que les scientifiques "
-    "vous cachent", "ce que les scientifiques te cachent", "la nasa cache", "complot", "secret interdit",
+    "choquant", "vous ne croirez", "tu ne croiras", "ce que les scientifiques vous cachent",
+    "ce que les scientifiques te cachent", "la nasa cache", "complot", "secret interdit",
 )
+_EMPHATIC = (
+    "révolutionnaire", "inédit", "incroyable", "extraordinaire", "stupéfiant",
+    "époustouflant", "bouleverse", "à jamais", "jamais vu", "spectaculaire",
+)
+# mot du script -> formes acceptées dans une source (souvent en anglais)
+_ORDERS = {"million": ("million",), "milliard": ("milliard", "billion")}
 
 
 def count_words(text: str) -> int:
     return len(text.split())
 
 
-def local_alerts(script: str) -> list[str]:
+def unsupported_numbers(text: str, source_text: str) -> list[str]:
+    """Chiffres et ordres de grandeur du texte qui ne figurent pas dans les sources."""
+    source_numbers = {re.sub(r"\D", "", m) for m in _NUMBER.findall(source_text)}
+    lowered_source = source_text.lower()
+    missing: list[str] = []
+    for match in _NUMBER.findall(text):
+        digits = re.sub(r"\D", "", match)
+        if digits and digits not in source_numbers and match.strip() not in missing:
+            missing.append(match.strip())
+    lowered = text.lower()
+    for word, variants in _ORDERS.items():
+        if word in lowered and not any(v in lowered_source for v in variants):
+            missing.append(word)
+    return missing
+
+
+def local_alerts(text: str, source_text: str = "") -> list[str]:
     """Contrôles sans IA : ce qu'une machine peut vérifier de façon fiable."""
     alerts = []
-    if _QUOTE.search(script):
+    if _QUOTE.search(text):
         alerts.append(
-            "le script contient un passage entre guillemets : vérifie qu'il ne s'agit pas "
-            "d'une citation inventée"
+            "passage entre guillemets : vérifie qu'il ne s'agit pas d'une citation inventée"
         )
-    lowered = script.lower()
+    lowered = text.lower()
     for marker in _SENSATIONAL:
         if marker in lowered:
-            alerts.append(f"formulation sensationnaliste ou complotiste détectée : « {marker} »")
-    if re.search(r"#\w+", script):
-        alerts.append("le script contient un hashtag (le script doit être uniquement du texte parlé)")
+            alerts.append(f"formulation sensationnaliste ou complotiste : « {marker} »")
+    for marker in _EMPHATIC:
+        if re.search(rf"\b{re.escape(marker)}", lowered):
+            alerts.append(f"mot emphatique à justifier ou retirer : « {marker} »")
+    if re.search(r"#\w+", text):
+        alerts.append("hashtag (la voix off doit être uniquement du texte parlé)")
+    if source_text:
+        missing = unsupported_numbers(text, source_text)
+        if missing:
+            alerts.append(
+                "chiffre ou ordre de grandeur absent des sources, à vérifier : "
+                + ", ".join(missing)
+            )
     return alerts
 
 
@@ -72,6 +107,8 @@ class RankTopics:
         )
         fresh = []
         for candidate in ranked:
+            if trends.matches_any(self.cfg.exclude_keywords, candidate.title):
+                continue
             if any(ctx.memory.is_source_used(item.url) for item in candidate.items if item.url):
                 continue
             if ctx.memory.is_duplicate(candidate.title):
@@ -108,10 +145,15 @@ class ChooseTopic:
             except (LLMError, ValueError, KeyError, TypeError):
                 log.warning("choix par l'IA impossible, on prend le sujet le mieux classé")
         ctx.topic = chosen.title
+        ctx.primary_url = next((item.url for item in chosen.items if item.url), "")
         lines, refs = [], []
         for item in chosen.items[:3]:
-            lines.append(f"- {item.title} ({item.source}) : {item.summary}")
-            refs.append(f"{item.source} : {item.url}" if item.url else item.source)
+            lines.append(f"- {item.title} ({item.publisher or item.source}) : {item.summary}")
+            ref = f"{item.publisher or item.source} : {item.url}" if item.url else (
+                item.publisher or item.source
+            )
+            if ref not in refs:
+                refs.append(ref)
         ctx.source_text = "\n".join(lines)
         ctx.sources = "\n".join(refs)
 
@@ -121,9 +163,30 @@ class ChooseTopic:
                 ctx.topic = topic
                 ctx.source_text = ""
                 ctx.sources = ""
+                ctx.primary_url = ""
                 ctx.notes["sujet"] = "aucune actualité exploitable : sujet de culture scientifique générale"
                 return
         # rien à traiter : ctx.topic reste vide, le cycle est ignoré
+
+
+class FetchArticle:
+    """Lit le texte de l'article choisi, pour que le scénario s'appuie sur la source complète."""
+
+    name = "article"
+
+    def __init__(self, cfg: ContentConfig, transport: Transport | None = None) -> None:
+        self.cfg = cfg
+        self.transport = transport or UrllibTransport()
+
+    def run(self, ctx: CycleContext) -> None:
+        if not self.cfg.fetch_articles or not ctx.primary_url or ctx.topic is None:
+            return
+        text = fetch_article_text(ctx.primary_url, self.transport)
+        if text:
+            ctx.source_text += f"\n\nTexte de l'article ({ctx.primary_url}) :\n{text}"
+            ctx.notes["article"] = "article lu en entier"
+        else:
+            ctx.notes["article"] = "article illisible : le script s'appuie sur le titre et le résumé seulement"
 
 
 class WriteScript:
@@ -178,6 +241,8 @@ class ReviewScript:
             return
         low, _, high = prompts.word_limits(self.cfg)
         lines: list[str] = []
+        if "article" in ctx.notes:
+            lines.append(f"Source : {ctx.notes['article']}.")
         try:
             answer = self.llm.generate(
                 prompts.review_prompt(ctx.topic, ctx.script, ctx.source_text),
@@ -195,14 +260,17 @@ class ReviewScript:
                     lines.append("Relecture IA : problèmes relevés, script NON corrigé :")
                 lines += [f"  - {p}" for p in problems] or ["  - (non détaillé)"]
             elif verdict == "ok":
-                lines.append("Relecture IA : aucun problème détecté.")
+                lines.append("Relecture IA : aucun problème détecté (elle peut en laisser passer).")
             else:
                 lines.append("Relecture IA : réponse inexploitable.")
         except (LLMError, ValueError, TypeError, AttributeError):
             lines.append("Relecture IA : indisponible (à relire attentivement).")
 
-        alerts = local_alerts(ctx.script)  # sur le script final
+        # contrôles automatiques sur le script final ET sur la légende
+        alerts = local_alerts(ctx.script, ctx.source_text)
+        caption_alerts = [a for a in local_alerts(ctx.caption or "", ctx.source_text) if a not in alerts]
         lines += [f"Alerte : {a}" for a in alerts]
+        lines += [f"Alerte (légende) : {a}" for a in caption_alerts]
         if not ctx.sources:
             lines.append("Alerte : aucune source d'actualité, vérifie chaque fait avant de valider.")
         lines.append("Une relecture par IA ne remplace pas ta validation.")
@@ -229,18 +297,25 @@ class BuildDraft:
 
 
 def build_steps(
-    config: AppConfig, llm: LLMProvider, sources: Sequence[NewsSource]
+    config: AppConfig,
+    llm: LLMProvider,
+    sources: Sequence[NewsSource],
+    transport: Transport | None = None,
 ) -> list[Step]:
     content = config.content
     return [
         GatherNews(sources),
         RankTopics(content),
         ChooseTopic(llm, content),
+        FetchArticle(content, transport),
         WriteScript(llm, content),
         ReviewScript(llm, content),
         BuildDraft(),
     ]
 
 
-def build_sources(config: AppConfig) -> list[NewsSource]:
-    return [news_module.RssNewsSource(s.name, s.url) for s in config.content.enabled_sources]
+def build_sources(config: AppConfig, transport: Transport | None = None) -> list[NewsSource]:
+    return [
+        news_module.RssNewsSource(s.name, s.url, transport=transport, publisher=s.publisher)
+        for s in config.content.enabled_sources
+    ]

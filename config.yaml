@@ -12,22 +12,58 @@ similarity_threshold: 0.8   # au-dessus, un sujet est considéré comme déjà t
 
 content:
   # Sources d'actualités (flux RSS). Une source en panne est ignorée, les autres continuent.
-  # Les adresses viennent des pages officielles de la NASA et de l'ESA ; leur bon
-  # fonctionnement se vérifie avec `python -m cosmos_ai news`.
+  # `publisher` regroupe les flux d'un même organisme : deux flux de la NASA comptent pour une
+  # seule source dans le classement. Plus il y a d'éditeurs indépendants qui parlent d'un sujet,
+  # plus il est jugé populaire. Vérifie les flux avec `python -m cosmos_ai news`.
+  #
+  # Testés (flux valides et à jour) : NASA, The Space Review, Space.com, Universe Today,
+  # Phys.org, Futura Espace.  Non testés : SpaceNews, ScienceDaily (adresses courantes, mais
+  # non vérifiables depuis l'environnement de développement : `news` dira s'ils répondent).
   sources:
+    # --- anglais ---
     - name: NASA
       url: https://www.nasa.gov/feed/
+      publisher: NASA
     - name: NASA communiqués
       url: https://www.nasa.gov/news-release/feed/
+      publisher: NASA
     - name: NASA Station spatiale
       url: https://www.nasa.gov/missions/station/feed/
-    - name: ESA
-      url: https://www.esa.int/rssfeed/Our_Activities/Space_News
+      publisher: NASA
+    - name: Space.com
+      url: https://www.space.com/feeds/news
+      publisher: Space.com
+    - name: Universe Today
+      url: https://www.universetoday.com/feed
+      publisher: Universe Today
+    - name: Phys.org Espace
+      url: https://phys.org/rss-feed/space-news/
+      publisher: Phys.org
     - name: The Space Review
       url: https://thespacereview.com/articles.xml
+      publisher: The Space Review
+    - name: ESA Exploration Science
+      url: https://explorationscience.esa.int/feed/
+      publisher: ESA
+    - name: SpaceNews          # non testé
+      url: https://spacenews.com/feed/
+      publisher: SpaceNews
+    - name: ScienceDaily Espace    # non testé
+      url: https://www.sciencedaily.com/rss/space_time.xml
+      publisher: ScienceDaily
+    # --- français ---
+    - name: Futura Espace
+      url: https://www.futura-sciences.com/rss/espace/actualites.xml
+      publisher: Futura
+    #
+    # Flux écartés après test : ancien flux ESA (esa.int/rssfeed/..., erreur 404), blog JPL et
+    # ESA Science (derniers articles de 2020 à 2023), science.nasa.gov/feed (XML invalide).
+    # Autres flux officiels : https://www.nasa.gov/rss-feeds et https://futura-sciences.com/flux-rss/
+
+  fetch_articles: true      # lit l'article complet du sujet choisi (meilleure exactitude)
 
   max_age_days: 14          # on ignore les actualités plus anciennes
-  candidates: 5             # nombre de sujets présentés à l'IA pour le choix
+  candidates: 8             # nombre de sujets présentés à l'IA pour le choix
   tone: tu                  # tu | vous
   min_seconds: 30           # durée du Reel : 30 à 90 secondes
   target_seconds: 50
@@ -58,6 +94,30 @@ content:
     - quantum
     - dark matter
     - dark energy
+
+  # Sujets écartés : les titres contenant un de ces mots (administration, cérémonies...).
+  exclude_keywords:
+    - honor award
+    - ceremony
+    - seed funding
+    - small business
+    - status update
+    - "challenge:"
+    - employees
+    - budget
+    - procurement
+    - hiring
+    - webinar
+    - podcast
+    - on this day in space
+    - lecture series
+    - seminar
+    - best telescope
+    - best binoculars
+    - best deals
+    - black friday
+    - bon plan
+    - job opening
 
   # Sujets de culture scientifique, utilisés seulement quand aucune actualité n'est exploitable.
   evergreen_topics:
