@@ -1,13 +1,144 @@
-"""Ligne de commande : `python -m cosmos_ai check|ping|demo`."""
+"""Ligne de commande : check, ping, demo, news, run, drafts, show, reject."""
 
 from __future__ import annotations
 
 import argparse
 
-from .config import load_config
+from . import content, news, trends
+from .agent import CosmosAgent
+from .config import AppConfig, load_config
 from .demo import run_demo
 from .errors import AllProvidersFailed, CosmosError, ProviderNotAvailable
 from .llm import build_router, provider_status
+from .memory import EditorialMemory
+from .services import ConsoleNotifier, NotConnectedPublisher
+
+
+def _print_draft(draft) -> None:
+    print(f"Reel #{draft.id} [{draft.status}] : {draft.topic}")
+    print("\n--- Voix off ---")
+    print(draft.script)
+    print("\n--- Légende ---")
+    print(draft.caption)
+    if draft.sources:
+        print("\n--- Sources ---")
+        print(draft.sources)
+    if draft.review:
+        print("\n--- Vérification ---")
+        print(draft.review)
+
+
+def _memory(config: AppConfig) -> EditorialMemory:
+    return EditorialMemory(config.database_path, threshold=config.similarity_threshold)
+
+
+def _cmd_check(config: AppConfig) -> int:
+    print(f"Configuration valide. Mode : {config.mode}")
+    print("Fournisseurs d'IA activés (ordre d'essai) :")
+    for rank, provider in enumerate(config.llm.enabled_providers, start=1):
+        print(f"  {rank}. {provider.name} : {provider_status(provider)}")
+    names = ", ".join(s.name for s in config.content.enabled_sources) or "aucune"
+    print(f"Sources d'actualités : {names}")
+    print(f"Durée des Reels : {config.content.min_seconds} à {config.content.max_seconds} s, ton « {config.content.tone} »")
+    print(f"Publications par jour : {config.posts_per_day}")
+    return 0
+
+
+def _cmd_ping(config: AppConfig) -> int:
+    try:
+        router = build_router(config.llm)
+    except ProviderNotAvailable as exc:
+        print(f"Aucun fournisseur utilisable : {exc}")
+        return 1
+    try:
+        answer = router.generate("Réponds uniquement par le mot OK.")
+    except AllProvidersFailed as exc:
+        print(f"Tous les fournisseurs ont échoué : {exc}")
+        return 1
+    print(f"Réponse de {router.last_used} : {answer.strip()[:100]}")
+    return 0
+
+
+def _cmd_news(config: AppConfig) -> int:
+    sources = content.build_sources(config)
+    if not sources:
+        print("Aucune source activée dans config.yaml.")
+        return 1
+    report = news.collect(sources)
+    print(f"{len(report.items)} actualités lues.")
+    for name, error in report.errors.items():
+        print(f"  Source en panne : {error}")
+    ranked = trends.rank(
+        report.items, config.content.interest_keywords, max_age_days=config.content.max_age_days
+    )
+    if not ranked:
+        print("Aucun sujet récent trouvé.")
+        return 0 if not report.errors else 1
+    print("\nSujets les plus populaires :")
+    for number, candidate in enumerate(ranked[:10], start=1):
+        print(f"{number:>2}. [{candidate.score:.1f}] {candidate.title}")
+        print(f"      sources : {', '.join(candidate.sources)}")
+    return 0
+
+
+def _cmd_run(config: AppConfig) -> int:
+    if config.mode != "manual":
+        print("Mode « auto » refusé : Facebook n'est pas encore connecté. Utilise mode: manual.")
+        return 1
+    try:
+        router = build_router(config.llm)
+    except ProviderNotAvailable as exc:
+        print(f"Aucun fournisseur d'IA utilisable : {exc}")
+        return 1
+    memory = _memory(config)
+    agent = CosmosAgent(
+        steps=content.build_steps(config, router, content.build_sources(config)),
+        memory=memory,
+        publisher=NotConnectedPublisher(),
+        notifier=ConsoleNotifier(),
+        mode="manual",
+    )
+    result = agent.run_cycle()
+    if result.status == "pending_approval":
+        print(f"Fournisseur d'IA utilisé en dernier : {router.last_used}\n")
+        _print_draft(result.draft)
+        print(f"\nRien n'est publié. Pour l'écarter : python -m cosmos_ai reject {result.draft.id}")
+        return 0
+    if result.status == "skipped":
+        print(f"Cycle ignoré : {result.error or 'aucun sujet disponible'}")
+        return 0
+    print(f"Échec du cycle : {result.error}")
+    return 1
+
+
+def _cmd_drafts(config: AppConfig) -> int:
+    drafts = _memory(config).list_drafts()
+    if not drafts:
+        print("Aucun brouillon.")
+        return 0
+    for draft in drafts:
+        print(f"#{draft.id} [{draft.status}] {draft.topic}")
+    return 0
+
+
+def _cmd_show(config: AppConfig, draft_id: int) -> int:
+    draft = _memory(config).get_draft(draft_id)
+    if draft is None:
+        print(f"Brouillon introuvable : {draft_id}")
+        return 1
+    _print_draft(draft)
+    return 0
+
+
+def _cmd_reject(config: AppConfig, draft_id: int) -> int:
+    agent = CosmosAgent([], _memory(config), NotConnectedPublisher(), ConsoleNotifier(), "manual")
+    try:
+        agent.reject(draft_id)
+    except (KeyError, ValueError) as exc:
+        print(f"Impossible : {exc}")
+        return 1
+    print(f"Brouillon #{draft_id} écarté (le sujet pourra être retraité).")
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -17,6 +148,13 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("check", help="vérifie la configuration et la présence des clés d'API")
     sub.add_parser("ping", help="teste les fournisseurs d'IA avec une vraie requête")
     sub.add_parser("demo", help="lance un cycle de démonstration (sans réseau)")
+    sub.add_parser("news", help="lit les flux d'actualités et affiche les sujets populaires")
+    sub.add_parser("run", help="produit un brouillon de Reel (rien n'est publié)")
+    sub.add_parser("drafts", help="liste les brouillons")
+    show = sub.add_parser("show", help="affiche un brouillon")
+    show.add_argument("id", type=int)
+    reject = sub.add_parser("reject", help="écarte un brouillon")
+    reject.add_argument("id", type=int)
     args = parser.parse_args(argv)
 
     try:
@@ -26,26 +164,19 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     if args.command == "check":
-        print(f"Configuration valide. Mode : {config.mode}")
-        print("Fournisseurs d'IA activés (ordre d'essai) :")
-        for rank, provider in enumerate(config.llm.enabled_providers, start=1):
-            print(f"  {rank}. {provider.name} : {provider_status(provider)}")
-        print(f"Publications par jour : {config.posts_per_day}")
-        return 0
-
+        return _cmd_check(config)
     if args.command == "ping":
-        try:
-            router = build_router(config.llm)
-        except ProviderNotAvailable as exc:
-            print(f"Aucun fournisseur utilisable : {exc}")
-            return 1
-        try:
-            answer = router.generate("Réponds uniquement par le mot OK.")
-        except AllProvidersFailed as exc:
-            print(f"Tous les fournisseurs ont échoué : {exc}")
-            return 1
-        print(f"Réponse de {router.last_used} : {answer.strip()[:100]}")
-        return 0
+        return _cmd_ping(config)
+    if args.command == "news":
+        return _cmd_news(config)
+    if args.command == "run":
+        return _cmd_run(config)
+    if args.command == "drafts":
+        return _cmd_drafts(config)
+    if args.command == "show":
+        return _cmd_show(config, args.id)
+    if args.command == "reject":
+        return _cmd_reject(config, args.id)
 
     result = run_demo(config)
     print(f"Résultat du cycle : {result.status}")

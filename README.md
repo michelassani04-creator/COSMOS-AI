@@ -14,7 +14,8 @@ Agent IA autonome qui gère la page Facebook **Cosmos en Poche** (vulgarisation 
 
 - Phase 1 terminée : fondations (structure, configuration, routeur, mémoire éditoriale, agent et validation, tests, CI).
 - Phase 2 terminée : intégrations Gemini et Groq (API officielles), tests avec réponses simulées.
-- Pas encore branché : voix, médias, Facebook. Voir `docs/feuille-de-route.md`.
+- Phase 3 terminée : veille (flux RSS), sujets populaires, choix du sujet, scénario aux consignes éditoriales de la page, vérification, brouillon avec sources.
+- Pas encore branché : visuels, voix, montage, Facebook. Voir `docs/feuille-de-route.md`.
 
 ## Utilisation
 
@@ -24,6 +25,9 @@ pytest                                  # lance les tests (sans clé, sans rése
 python -m cosmos_ai check               # vérifie config.yaml et la présence des clés
 python -m cosmos_ai ping                # vraie requête de test aux fournisseurs d'IA
 python -m cosmos_ai demo                # cycle de démonstration, sans réseau
+python -m cosmos_ai news                # lit les flux et classe les sujets populaires
+python -m cosmos_ai run                 # produit un brouillon de Reel (rien n'est publié)
+python -m cosmos_ai drafts              # liste les brouillons (puis : show 1, reject 1)
 ```
 
 ## Secrets
@@ -34,6 +38,7 @@ Les clés d'API ne vont jamais dans le dépôt. `config.yaml` ne contient que le
 
 - `docs/installation.md` : installation, configuration, dépannage
 - `docs/fournisseurs-ia.md` : obtenir les clés, quotas, comportement du basculement
+- `docs/contenu.md` : veille, tendances, scénario, vérification (et leurs limites)
 - `docs/architecture.md` : architecture complète
 - `docs/feuille-de-route.md` : phases de développement
 - `docs/ajouter-un-fournisseur.md` : brancher un nouveau fournisseur d'IA

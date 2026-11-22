@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Mapping, Protocol
 
 USER_AGENT = "cosmos-ai/0.1"  # certains services refusent l'agent par défaut de urllib
+MAX_BODY_BYTES = 2_000_000  # une réponse plus grosse est refusée
 
 
 class TransportError(Exception):
@@ -31,6 +32,8 @@ class Transport(Protocol):
         self, url: str, headers: Mapping[str, str], payload: dict, timeout: float
     ) -> HttpResponse: ...
 
+    def get(self, url: str, headers: Mapping[str, str], timeout: float) -> HttpResponse: ...
+
 
 def _lower(headers) -> dict[str, str]:
     return {k.lower(): v for k, v in headers.items()}
@@ -46,13 +49,30 @@ class UrllibTransport:
             headers={"Content-Type": "application/json", "User-Agent": USER_AGENT, **headers},
             method="POST",
         )
+        return self._send(request, timeout)
+
+    def get(self, url: str, headers: Mapping[str, str], timeout: float) -> HttpResponse:
+        request = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": USER_AGENT,
+                "Accept": "application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
+                **headers,
+            },
+            method="GET",
+        )
+        return self._send(request, timeout)
+
+    @staticmethod
+    def _send(request: urllib.request.Request, timeout: float) -> HttpResponse:
         try:
             with urllib.request.urlopen(request, timeout=timeout) as resp:
-                return HttpResponse(
-                    resp.status, _lower(resp.headers), resp.read().decode("utf-8", "replace")
-                )
+                raw = resp.read(MAX_BODY_BYTES + 1)
+                if len(raw) > MAX_BODY_BYTES:
+                    raise TransportError("réponse trop volumineuse")
+                return HttpResponse(resp.status, _lower(resp.headers), raw.decode("utf-8", "replace"))
         except urllib.error.HTTPError as exc:  # réponse HTTP d'erreur : on la remonte telle quelle
-            body = exc.read().decode("utf-8", "replace")
+            body = exc.read(MAX_BODY_BYTES).decode("utf-8", "replace")
             return HttpResponse(exc.code, _lower(exc.headers), body)
         except (urllib.error.URLError, OSError) as exc:
             reason = getattr(exc, "reason", exc)

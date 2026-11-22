@@ -17,17 +17,19 @@ Publication ◄─ Porte de validation ◄─ Montage ◄─ Voix/sous-titres �
 
 | Module | Rôle | Phase |
 |---|---|---|
-| Veille scientifique | Surveiller les découvertes mondiales | 3 |
-| Actualités spatiales et tech | Suivre NASA, ESA, SpaceX, etc. | 3 |
-| Détection des tendances | Repérer les sujets susceptibles de plaire | 3 |
+| Veille scientifique | Surveiller les découvertes mondiales | **3 (fait)** |
+| Actualités spatiales et tech | Suivre NASA, ESA, etc. (flux RSS) | **3 (fait)** |
+| Détection des tendances | Repérer les sujets populaires | **3 (fait)** |
 | Mémoire éditoriale | Éviter les répétitions | **1 (fait)** |
-| Scénario | Écrire le script de 30 à 90 s | 3 |
-| Vérification | Contrôler l'exactitude scientifique | 3 |
+| Scénario | Écrire le script de 30 à 90 s | **3 (fait)** |
+| Vérification | Contrôler l'exactitude scientifique (IA + contrôles automatiques) | **3 (fait)** |
 | Visuels scientifiques | Images et illustrations | 4 |
 | Voix, sous-titres, montage | Produire le Reel complet | 4 |
 | Publication Facebook | Publier via l'API Graph | 5 |
 | Gestion des commentaires | Répondre aux abonnés | 6 |
 | Statistiques et optimisation | Adapter la stratégie | 6 |
+
+Détail de la phase 3 : `docs/contenu.md`.
 
 ## Ports et adaptateurs
 

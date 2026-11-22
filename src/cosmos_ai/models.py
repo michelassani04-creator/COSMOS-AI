@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 
 
 @dataclass(frozen=True)
@@ -11,6 +12,7 @@ class NewsItem:
     url: str
     source: str
     summary: str = ""
+    published: datetime | None = None
 
 
 @dataclass
@@ -28,6 +30,8 @@ class Draft:
     script: str
     caption: str
     video_path: str = ""
+    sources: str = ""  # références des actualités utilisées
+    review: str = ""  # avis de la vérification scientifique automatique
     id: int | None = None
     status: str = "draft"
     post_id: str | None = None

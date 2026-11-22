@@ -10,6 +10,121 @@ database_path: data/cosmos.db
 posts_per_day: 2
 similarity_threshold: 0.8   # au-dessus, un sujet est considéré comme déjà traité
 
+content:
+  # Sources d'actualités (flux RSS). Une source en panne est ignorée, les autres continuent.
+  # Les adresses viennent des pages officielles de la NASA et de l'ESA ; leur bon
+  # fonctionnement se vérifie avec `python -m cosmos_ai news`.
+  sources:
+    - name: NASA
+      url: https://www.nasa.gov/feed/
+    - name: NASA communiqués
+      url: https://www.nasa.gov/news-release/feed/
+    - name: NASA Station spatiale
+      url: https://www.nasa.gov/missions/station/feed/
+    - name: ESA
+      url: https://www.esa.int/rssfeed/Our_Activities/Space_News
+    - name: The Space Review
+      url: https://thespacereview.com/articles.xml
+
+  max_age_days: 14          # on ignore les actualités plus anciennes
+  candidates: 5             # nombre de sujets présentés à l'IA pour le choix
+  tone: tu                  # tu | vous
+  min_seconds: 30           # durée du Reel : 30 à 90 secondes
+  target_seconds: 50
+  max_seconds: 90
+
+  # Mots qui font monter un sujet dans le classement (détection des sujets populaires).
+  interest_keywords:
+    - trou noir
+    - galaxie
+    - exoplanète
+    - Mars
+    - Lune
+    - Artemis
+    - James Webb
+    - Big Bang
+    - supernova
+    - télescope
+    - astéroïde
+    - mission
+    - lancement
+    - black hole
+    - galaxy
+    - exoplanet
+    - Moon
+    - telescope
+    - asteroid
+    - launch
+    - quantum
+    - dark matter
+    - dark energy
+
+  # Sujets de culture scientifique, utilisés seulement quand aucune actualité n'est exploitable.
+  evergreen_topics:
+    - Et si le Soleil disparaissait demain ?
+    - Que se passerait-il si on enlevait le CO2 de Vénus ?
+    - Vénus ou Mars, laquelle rendre habitable ?
+    - Pourquoi Vénus est-elle plus chaude que Mercure ?
+    - Que se passe-t-il quand on tombe dans un trou noir ?
+    - Comment sait-on que l'Univers est en expansion ?
+    - Pourquoi voit-on le passé quand on regarde les étoiles ?
+    - Qu'est-ce que la matière noire, et pourquoi la cherche-t-on ?
+    - Combien de temps faudrait-il pour atteindre l'étoile la plus proche ?
+    - Qu'est-ce qu'une exoplanète, et comment les découvre-t-on ?
+
+  # Identité éditoriale : transmise telle quelle à l'IA comme consignes.
+  editorial:
+    identity:
+      - Cosmos en Poche doit donner l'impression d'un média scientifique professionnel.
+      - Identité scientifique, cinématographique et accessible, avec une touche de mystère.
+      - Éveiller la curiosité et faire découvrir les mystères de l'Univers.
+      - Expliquer les grandes découvertes scientifiques et rendre accessibles les phénomènes complexes.
+      - Donner envie d'apprendre et de partager.
+    voice:
+      - Français impeccable, naturel et accessible.
+      - Vocabulaire scientifique précis, mais expliqué simplement.
+      - Ton intelligent, captivant et mystérieux.
+      - Pas de langage enfantin, pas d'expressions trop familières.
+    style:
+      - Des accroches intrigantes.
+      - Des explications progressives.
+      - Des faits scientifiques vérifiables.
+      - Des analogies intelligentes.
+      - Des conclusions qui invitent à réfléchir.
+    priority_topics:
+      - Astronomie et astrophysique
+      - Trous noirs et galaxies
+      - Exploration spatiale
+      - Physique quantique
+      - Origine et évolution de l'Univers
+      - Intelligence artificielle et technologies
+      - Découvertes scientifiques récentes
+      - Mystères encore inexpliqués par la science
+    rules:
+      - Aucune fausse information scientifique.
+      - Aucune théorie complotiste présentée comme une vérité.
+      - Aucune invention de citations de scientifiques.
+      - Toujours distinguer les faits établis, les hypothèses et les spéculations.
+      - Mentionner les sources scientifiques.
+      - Éviter les titres trompeurs et le sensationnalisme.
+      - Ne jamais sacrifier la précision scientifique pour obtenir des vues.
+    example: >-
+      Et si le Soleil disparaissait demain ? La Terre ne s'en rendrait pas compte immédiatement.
+      Pendant environ huit minutes, notre planète continuerait de recevoir sa lumière.
+      Voici pourquoi…
+
+  # Identité visuelle : utilisée à partir de la phase 4 (production vidéo).
+  visual:
+    format: "9:16"
+    palette:
+      - bleu profond
+      - noir spatial
+      - touches lumineuses
+    style:
+      - Univers sombre et cinématographique.
+      - Images astronomiques de haute qualité.
+      - Typographie moderne et élégante.
+
 llm:
   # Pause d'un fournisseur dont le quota est atteint, si celui-ci n'indique pas
   # lui-même quand réessayer.

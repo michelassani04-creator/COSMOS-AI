@@ -45,9 +45,16 @@ class FakeTransport:
         self.items = list(items)
         self.calls = []
 
-    def post_json(self, url, headers, payload, timeout):
-        self.calls.append({"url": url, "headers": headers, "payload": payload, "timeout": timeout})
+    def _next(self):
         item = self.items.pop(0) if len(self.items) > 1 else self.items[0]
         if isinstance(item, Exception):
             raise item
         return item
+
+    def post_json(self, url, headers, payload, timeout):
+        self.calls.append({"url": url, "headers": headers, "payload": payload, "timeout": timeout})
+        return self._next()
+
+    def get(self, url, headers, timeout):
+        self.calls.append({"url": url, "headers": headers, "payload": None, "timeout": timeout})
+        return self._next()

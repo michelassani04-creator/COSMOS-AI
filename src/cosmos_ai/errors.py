@@ -44,3 +44,15 @@ class AuthenticationError(LLMError):
 
 class AllProvidersFailed(LLMError):
     """Tous les fournisseurs d'IA ont échoué."""
+
+
+class FeedError(CosmosError):
+    """Un flux d'actualités est illisible, refusé ou injoignable."""
+
+
+class ContentError(CosmosError):
+    """Le contenu produit (sujet, script, vérification) est inutilisable."""
+
+
+class NotConnected(CosmosError):
+    """Un service externe n'est pas encore connecté (Facebook, avant la phase 5)."""

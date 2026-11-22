@@ -4,8 +4,8 @@
 |---|---|---|
 | 1. Fondations | Structure, configuration, ports, routeur d'IA, mémoire éditoriale, agent et validation, tests, CI | Fait |
 | 2. Couche IA | Adaptateurs Gemini (principal) et Groq (secondaire), basculement, délais d'attente, clés en variables d'environnement | Fait |
+| 3. Contenu | Veille (RSS), détection des sujets populaires, choix du sujet, scénario, vérification, brouillon avec sources | Fait |
 | 2 bis. Autres fournisseurs | OpenRouter, Ollama (local), OpenAI (optionnel) | Plus tard |
-| 3. Contenu | Veille, actualités, tendances, choix du sujet, scénario, vérification | À faire |
 | 4. Production vidéo | Visuels, voix, sous-titres, montage au format 9:16 | À faire |
 | 5. Publication | Connexion Facebook (API Graph), notification de validation | À faire |
 | 6. Interaction | Commentaires, statistiques, optimisation de la stratégie | À faire |
