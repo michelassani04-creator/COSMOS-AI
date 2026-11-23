@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Mapping
@@ -96,6 +97,23 @@ class ContentConfig:
 
 
 @dataclass(frozen=True)
+class VideoConfig:
+    """Production des Reels (phase 4)."""
+
+    voice: str = "fr-FR-HenriNeural"
+    rate: str = "+0%"  # vitesse de la voix : "-5%" plus lent, "+5%" plus rapide
+    width: int = 1080
+    height: int = 1920
+    fps: int = 25
+    crf: int = 23  # qualité H.264 : plus bas = meilleure qualité et fichier plus gros
+    max_images: int = 5
+    image_queries: int = 3
+    output_dir: str = "output"
+    font_name: str = "Roboto"
+    font_dir: str = ""  # dossier de polices ; vide = /system/fonts s'il existe (Android)
+
+
+@dataclass(frozen=True)
 class AppConfig:
     mode: str = "manual"
     database_path: str = "data/cosmos.db"
@@ -103,6 +121,7 @@ class AppConfig:
     similarity_threshold: float = 0.8
     llm: LLMConfig = field(default_factory=LLMConfig)
     content: ContentConfig = field(default_factory=ContentConfig)
+    video: VideoConfig = field(default_factory=VideoConfig)
 
 
 # ----------------------------------------------------------------- analyse ---
@@ -220,6 +239,40 @@ def _parse_content(data: Mapping) -> ContentConfig:
     )
 
 
+def _parse_video(raw: Mapping) -> VideoConfig:
+    if not isinstance(raw, Mapping):
+        raise ConfigError("video doit être un dictionnaire")
+    d = VideoConfig()
+
+    def number(key: str, low: int, high: int) -> int:
+        value = raw.get(key, getattr(d, key))
+        if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
+            raise ConfigError(f"video.{key} doit être un entier entre {low} et {high}")
+        return value
+
+    def text(key: str, pattern: str, hint: str, allow_empty: bool = False) -> str:
+        value = raw.get(key, getattr(d, key))
+        if not isinstance(value, str) or not (
+            re.fullmatch(pattern, value) or (allow_empty and value == "")
+        ):
+            raise ConfigError(f"video.{key} invalide : {hint}")
+        return value
+
+    return VideoConfig(
+        voice=text("voice", r"[A-Za-z]{2,3}-[A-Za-z]{2,4}-[A-Za-z0-9]+", "exemple fr-FR-HenriNeural"),
+        rate=text("rate", r"[+-]\d{1,3}%", "exemple +0% ou -5%"),
+        width=number("width", 360, 2160),
+        height=number("height", 640, 3840),
+        fps=number("fps", 15, 60),
+        crf=number("crf", 15, 35),
+        max_images=number("max_images", 1, 12),
+        image_queries=number("image_queries", 1, 6),
+        output_dir=text("output_dir", r"[\w./-]+", "chemin sans espace ni caractère spécial"),
+        font_name=text("font_name", r"[\w .-]+", "nom de police simple"),
+        font_dir=text("font_dir", r"[\w./-]+", "chemin sans espace", allow_empty=True),
+    )
+
+
 def parse_config(data: Mapping) -> AppConfig:
     mode = data.get("mode", "manual")
     if mode not in VALID_MODES:
@@ -257,6 +310,7 @@ def parse_config(data: Mapping) -> AppConfig:
         similarity_threshold=float(threshold),
         llm=llm,
         content=_parse_content(data.get("content") or {}),
+        video=_parse_video(data.get("video") or {}),
     )
 
 

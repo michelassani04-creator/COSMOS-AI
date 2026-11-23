@@ -56,3 +56,7 @@ class ContentError(CosmosError):
 
 class NotConnected(CosmosError):
     """Un service externe n'est pas encore connecté (Facebook, avant la phase 5)."""
+
+
+class VideoError(CosmosError):
+    """Échec de la production vidéo (voix, image, montage)."""

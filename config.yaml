@@ -185,6 +185,17 @@ content:
       - Images astronomiques de haute qualité.
       - Typographie moderne et élégante.
 
+# Production des Reels (phase 4). Rien n'est publié : la vidéo est créée dans output/.
+video:
+  voice: fr-FR-HenriNeural     # voix grave ; essaie aussi fr-FR-DeniseNeural (voix féminine)
+  rate: "+0%"                  # vitesse : "-5%" plus posé, "+5%" plus dynamique
+  max_images: 5                # nombre d'images différentes dans un Reel
+  image_queries: 3             # recherches d'images demandées à l'IA
+  output_dir: output
+  font_name: Roboto            # police des sous-titres (Roboto existe sur Android)
+  font_dir: ""                 # vide = /system/fonts si présent
+  crf: 23                      # qualité vidéo (18 = très bonne, 28 = légère)
+
 llm:
   # Pause d'un fournisseur dont le quota est atteint, si celui-ci n'indique pas
   # lui-même quand réessayer.

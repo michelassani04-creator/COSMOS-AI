@@ -15,7 +15,8 @@ Agent IA autonome qui gère la page Facebook **Cosmos en Poche** (vulgarisation 
 - Phase 1 terminée : fondations (structure, configuration, routeur, mémoire éditoriale, agent et validation, tests, CI).
 - Phase 2 terminée : intégrations Gemini et Groq (API officielles), tests avec réponses simulées.
 - Phase 3 terminée : veille (flux RSS), sujets populaires, choix du sujet, scénario aux consignes éditoriales de la page, vérification, brouillon avec sources.
-- Pas encore branché : visuels, voix, montage, Facebook. Voir `docs/feuille-de-route.md`.
+- Phase 4 codée (à valider sur ton téléphone) : voix off Edge TTS, images de la NASA, sous-titres incrustés, montage vertical 9:16 avec FFmpeg. Voir `docs/video.md`.
+- Pas encore branché : Facebook (phase 5). Voir `docs/feuille-de-route.md`.
 
 ## Utilisation
 
@@ -27,6 +28,7 @@ python -m cosmos_ai ping                # vraie requête de test aux fournisseur
 python -m cosmos_ai demo                # cycle de démonstration, sans réseau
 python -m cosmos_ai news                # lit les flux et classe les sujets populaires
 python -m cosmos_ai run                 # produit un brouillon de Reel (rien n'est publié)
+python -m cosmos_ai video 3             # produit la vidéo du brouillon n° 3 (dans output/)
 python -m cosmos_ai drafts              # liste les brouillons (puis : show 1, reject 1)
 ```
 
@@ -36,6 +38,7 @@ Les clés d'API ne vont jamais dans le dépôt. `config.yaml` ne contient que le
 
 ## Documentation
 
+- `docs/video.md` : production vidéo (installation de FFmpeg et edge-tts, voix, images, dépannage)
 - `docs/installation.md` : installation, configuration, dépannage
 - `docs/fournisseurs-ia.md` : obtenir les clés, quotas, comportement du basculement
 - `docs/contenu.md` : veille, tendances, scénario, vérification (et leurs limites)

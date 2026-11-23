@@ -95,6 +95,10 @@ class EditorialMemory:
         )
         self._db.commit()
 
+    def set_video_path(self, draft_id: int, path: str) -> None:
+        self._db.execute("UPDATE drafts SET video_path = ? WHERE id = ?", (path, draft_id))
+        self._db.commit()
+
     def list_drafts(self, status: str | None = None) -> list[Draft]:
         if status is None:
             rows = self._db.execute("SELECT * FROM drafts ORDER BY id").fetchall()

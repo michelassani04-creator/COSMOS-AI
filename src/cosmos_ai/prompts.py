@@ -139,3 +139,16 @@ def review_prompt(topic: str, script: str, source_text: str, tone: str = "tu") -
         '{"verdict": "ok" ou "a_corriger", "problemes": ["<problème précis>", ...], '
         '"script_corrige": "<script entier corrigé, uniquement si verdict = a_corriger>"}'
     )
+
+
+def visual_prompt(topic: str, script: str, count: int) -> str:
+    return (
+        "Tu choisis les images d'un Reel scientifique. Les images viennent de la bibliothèque "
+        "d'images de la NASA, dont le moteur de recherche comprend l'anglais.\n\n"
+        f"Sujet : {topic}\n\n"
+        f"Script :\n{DATA_OPEN}\n{fence(script)}\n{DATA_CLOSE}\n\n"
+        f"Propose {count} recherches d'images EN ANGLAIS, de 2 à 4 mots chacune, qui illustrent "
+        "ce que le script décrit (objet céleste, télescope, mission, phénomène). Pars du plus "
+        "précis au plus général. Évite les portraits, logos et réunions.\n"
+        'Réponds UNIQUEMENT par un objet JSON : {"requetes": ["...", "..."]}'
+    )

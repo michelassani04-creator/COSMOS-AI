@@ -1,8 +1,10 @@
-"""Ligne de commande : check, ping, demo, news, run, drafts, show, reject."""
+"""Ligne de commande : check, ping, demo, news, run, video, drafts, show, reject."""
 
 from __future__ import annotations
 
 import argparse
+import importlib.util
+import shutil
 
 from . import content, news, trends
 from .agent import CosmosAgent
@@ -12,6 +14,11 @@ from .errors import AllProvidersFailed, CosmosError, ProviderNotAvailable
 from .llm import build_router, provider_status
 from .memory import EditorialMemory
 from .services import ConsoleNotifier, NotConnectedPublisher
+from .video.images import NasaImageSource
+from .video.produce import produce_video
+from .video.render import FfmpegRenderer
+from .video.voice import EdgeTTS
+from .errors import VideoError
 
 
 def _print_draft(draft) -> None:
@@ -41,6 +48,9 @@ def _cmd_check(config: AppConfig) -> int:
     print(f"Sources d'actualités : {names}")
     print(f"Durée des Reels : {config.content.min_seconds} à {config.content.max_seconds} s, ton « {config.content.tone} »")
     print(f"Publications par jour : {config.posts_per_day}")
+    ffmpeg = "installé" if shutil.which("ffmpeg") and shutil.which("ffprobe") else "ABSENT (pkg install ffmpeg)"
+    edge = "installé" if importlib.util.find_spec("edge_tts") else "ABSENT (pip install edge-tts)"
+    print(f"Vidéo : FFmpeg {ffmpeg} ; edge-tts {edge} ; voix {config.video.voice}")
     return 0
 
 
@@ -119,6 +129,43 @@ def _cmd_run(config: AppConfig) -> int:
     return 1
 
 
+def _cmd_video(config: AppConfig, draft_id: int, use_images: bool) -> int:
+    memory = _memory(config)
+    draft = memory.get_draft(draft_id)
+    if draft is None:
+        print(f"Brouillon introuvable : {draft_id}")
+        return 1
+    if draft.status == "rejected":
+        print(f"Le brouillon #{draft_id} est écarté : aucune vidéo produite.")
+        return 1
+    try:
+        llm = build_router(config.llm)
+    except ProviderNotAvailable:
+        llm = None  # recherches d'images génériques
+    try:
+        result = produce_video(
+            draft,
+            config,
+            llm=llm,
+            tts=EdgeTTS(config.video.voice, config.video.rate),
+            source=NasaImageSource() if use_images else None,
+            renderer=FfmpegRenderer(config.video),
+            use_images=use_images,
+            progress=print,
+        )
+    except VideoError as exc:
+        print(f"Échec de la production vidéo : {exc}")
+        return 1
+    memory.set_video_path(draft_id, str(result.path))
+    size = result.path.stat().st_size / 1_000_000
+    print(f"\nVidéo prête : {result.path} ({size:.1f} Mo, {result.images} images)")
+    print(f"Crédits des images : {result.credits_path}")
+    for note in result.notes:
+        print(f"  Note : {note}")
+    print("Rien n'est publié. Ouvre la vidéo dans ta galerie ou ton gestionnaire de fichiers.")
+    return 0
+
+
 def _cmd_drafts(config: AppConfig) -> int:
     drafts = _memory(config).list_drafts()
     if not drafts:
@@ -158,6 +205,9 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("demo", help="lance un cycle de démonstration (sans réseau)")
     sub.add_parser("news", help="lit les flux d'actualités et affiche les sujets populaires")
     sub.add_parser("run", help="produit un brouillon de Reel (rien n'est publié)")
+    video = sub.add_parser("video", help="produit la vidéo d'un brouillon (voix, images, montage)")
+    video.add_argument("id", type=int)
+    video.add_argument("--sans-images", action="store_true", help="fond sombre généré, sans images")
     sub.add_parser("drafts", help="liste les brouillons")
     show = sub.add_parser("show", help="affiche un brouillon")
     show.add_argument("id", type=int)
@@ -179,6 +229,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_news(config)
     if args.command == "run":
         return _cmd_run(config)
+    if args.command == "video":
+        return _cmd_video(config, args.id, not args.sans_images)
     if args.command == "drafts":
         return _cmd_drafts(config)
     if args.command == "show":

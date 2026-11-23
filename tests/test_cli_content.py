@@ -149,3 +149,71 @@ def test_news_command_hides_excluded_topics(config_file, monkeypatch, capsys):
     assert cli.main(["--config", config_file, "news"]) == 0
     out = capsys.readouterr().out
     assert "Trou noir géant observé" in out and "Honor Awards" not in out
+
+
+# ------------------------------------------------------------ phase 4 : vidéo ---
+def test_video_command_produces_video_and_records_path(config_file, monkeypatch, capsys, tmp_path):
+    from pathlib import Path
+
+    from cosmos_ai import cli
+    from cosmos_ai.memory import EditorialMemory
+    from cosmos_ai.config import load_config
+    from cosmos_ai.models import Draft
+    from cosmos_ai.video.produce import VideoResult
+
+    config = load_config(config_file)
+    memory = EditorialMemory(config.database_path)
+    saved = memory.save_draft(Draft(topic="T", script="Un deux trois quatre.", caption="c"), "pending_approval")
+    memory.close()
+
+    seen = {}
+
+    def fake_produce(draft, cfg, **kw):
+        seen["images"] = kw["use_images"]
+        video = tmp_path / "reel.mp4"
+        video.write_bytes(b"v")
+        kw["progress"]("Montage…")
+        return VideoResult(path=video, credits_path=tmp_path / "credits.txt", images=0, notes=["aucune image"])
+
+    monkeypatch.setattr(cli, "produce_video", fake_produce)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    assert cli.main(["--config", config_file, "video", str(saved.id), "--sans-images"]) == 0
+    out = capsys.readouterr().out
+    assert "Vidéo prête" in out and "Rien n'est publié" in out and seen["images"] is False
+    memory = EditorialMemory(config.database_path)
+    assert memory.get_draft(saved.id).video_path.endswith("reel.mp4")
+
+
+def test_video_command_unknown_or_rejected_draft(config_file, capsys):
+    from cosmos_ai import cli
+
+    assert cli.main(["--config", config_file, "video", "99"]) == 1
+    assert "introuvable" in capsys.readouterr().out
+
+
+def test_video_command_reports_failure(config_file, monkeypatch, capsys):
+    from cosmos_ai import cli
+    from cosmos_ai.config import load_config
+    from cosmos_ai.errors import VideoError
+    from cosmos_ai.memory import EditorialMemory
+    from cosmos_ai.models import Draft
+
+    memory = EditorialMemory(load_config(config_file).database_path)
+    saved = memory.save_draft(Draft(topic="T", script="Un deux.", caption="c"), "pending_approval")
+    memory.close()
+
+    def boom(*a, **k):
+        raise VideoError("voix : edge-tts n'est pas installé (pip install edge-tts)")
+
+    monkeypatch.setattr(cli, "produce_video", boom)
+    assert cli.main(["--config", config_file, "video", str(saved.id)]) == 1
+    assert "edge-tts" in capsys.readouterr().out
+
+
+def test_check_reports_video_tools(config_file, capsys):
+    from cosmos_ai import cli
+
+    cli.main(["--config", config_file, "check"])
+    out = capsys.readouterr().out
+    assert "Vidéo : FFmpeg" in out and "fr-FR-HenriNeural" in out
