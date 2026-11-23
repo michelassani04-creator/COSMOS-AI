@@ -22,6 +22,10 @@ log = logging.getLogger(__name__)
 
 _QUOTE = re.compile(r"«[^»]{3,}»|“[^”]{3,}”|\"[^\"]{3,}\"")
 _NUMBER = re.compile(r"\d+(?:[   .,]\d{3})*(?:[.,]\d+)?")
+# un terme introduit par « appelé », « surnommé »… est un nom, pas une citation
+_TERM_QUOTE = re.compile(
+    r"(?:appel|nomm|surnomm|baptis|dénomm)[ée]e?s?\s+(?:«[^»]{3,}»|“[^”]{3,}”)", re.IGNORECASE
+)
 _SENSATIONAL = (
     "choquant", "vous ne croirez", "tu ne croiras", "ce que les scientifiques vous cachent",
     "ce que les scientifiques te cachent", "la nasa cache", "complot", "secret interdit",
@@ -29,7 +33,15 @@ _SENSATIONAL = (
 _EMPHATIC = (
     "révolutionnaire", "inédit", "incroyable", "extraordinaire", "stupéfiant",
     "époustouflant", "bouleverse", "à jamais", "jamais vu", "spectaculaire",
+    "crucial", "indispensable", "capital", "fondamental",
 )
+# marqueurs d'un mauvais registre d'adresse
+_VOUS = re.compile(
+    r"\b(vous|votre|vos|imaginez|regardez|sachez|savez|pensez|observez|découvrez|"
+    r"écoutez|rappelez|retenez|essayez|voyez)\b",
+    re.IGNORECASE,
+)
+_TU = re.compile(r"\b(tu|ton|ta|tes|toi|imagine|regarde|sache|sais|pense)\b", re.IGNORECASE)
 # mot du script -> formes acceptées dans une source (souvent en anglais)
 _ORDERS = {"million": ("million",), "milliard": ("milliard", "billion")}
 
@@ -54,10 +66,14 @@ def unsupported_numbers(text: str, source_text: str) -> list[str]:
     return missing
 
 
-def local_alerts(text: str, source_text: str = "") -> list[str]:
+def local_alerts(text: str, source_text: str = "", tone: str = "") -> list[str]:
     """Contrôles sans IA : ce qu'une machine peut vérifier de façon fiable."""
     alerts = []
-    if _QUOTE.search(text):
+    if tone == "tu" and (m := _VOUS.search(text)):
+        alerts.append(f"vouvoiement alors que le ton est le tutoiement : « {m.group(0)} »")
+    if tone == "vous" and (m := _TU.search(text)):
+        alerts.append(f"tutoiement alors que le ton est le vouvoiement : « {m.group(0)} »")
+    if _QUOTE.search(_TERM_QUOTE.sub(" ", text)):
         alerts.append(
             "passage entre guillemets : vérifie qu'il ne s'agit pas d'une citation inventée"
         )
@@ -245,7 +261,7 @@ class ReviewScript:
             lines.append(f"Source : {ctx.notes['article']}.")
         try:
             answer = self.llm.generate(
-                prompts.review_prompt(ctx.topic, ctx.script, ctx.source_text),
+                prompts.review_prompt(ctx.topic, ctx.script, ctx.source_text, self.cfg.tone),
                 system=prompts.system_prompt(self.cfg),
             )
             data = extract_json(answer)
@@ -267,8 +283,8 @@ class ReviewScript:
             lines.append("Relecture IA : indisponible (à relire attentivement).")
 
         # contrôles automatiques sur le script final ET sur la légende
-        alerts = local_alerts(ctx.script, ctx.source_text)
-        caption_alerts = [a for a in local_alerts(ctx.caption or "", ctx.source_text) if a not in alerts]
+        alerts = local_alerts(ctx.script, ctx.source_text, self.cfg.tone)
+        caption_alerts = [a for a in local_alerts(ctx.caption or "", ctx.source_text, self.cfg.tone) if a not in alerts]
         lines += [f"Alerte : {a}" for a in alerts]
         lines += [f"Alerte (légende) : {a}" for a in caption_alerts]
         if not ctx.sources:

@@ -114,7 +114,8 @@ def script_prompt(
     )
 
 
-def review_prompt(topic: str, script: str, source_text: str) -> str:
+def review_prompt(topic: str, script: str, source_text: str, tone: str = "tu") -> str:
+    address = "tutoiement (jamais « vous »)" if tone == "tu" else "vouvoiement (jamais « tu »)"
     source = (
         f"Sources de départ :\n{DATA_OPEN}\n{fence(source_text)}\n{DATA_CLOSE}\n\n"
         if source_text
@@ -130,7 +131,10 @@ def review_prompt(topic: str, script: str, source_text: str) -> str:
         "portée ou conséquence ajoutées), chaque chiffre ou date absent des sources ou durci "
         "(« environ un million » devenu « un million »), toute erreur factuelle, toute hypothèse "
         "présentée comme un fait, toute citation de personne, toute formulation sensationnaliste "
-        "ou emphatique, tout écart de ton. Le doute doit être signalé.\n"
+        "ou emphatique, tout écart de ton. Signale aussi les durées et ordres de grandeur écrits "
+        "en toutes lettres qui ne sont pas dans les sources (« depuis des millénaires », « quinze "
+        f"ans »). Le registre doit être le {address} : un script au mauvais registre est à "
+        "corriger. Si tu corriges le script, garde ce registre. Le doute doit être signalé.\n"
         "Réponds UNIQUEMENT par un objet JSON de la forme :\n"
         '{"verdict": "ok" ou "a_corriger", "problemes": ["<problème précis>", ...], '
         '"script_corrige": "<script entier corrigé, uniquement si verdict = a_corriger>"}'

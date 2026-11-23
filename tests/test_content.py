@@ -424,3 +424,12 @@ def test_full_cycle_gives_the_script_the_full_article():
     script_prompt = next(c for c in llm.calls if "Écris le texte de la voix off" in c)
     assert "261 times per second" in script_prompt
     assert "article lu en entier" in memory.get_draft(result.draft.id).review
+
+
+def test_local_alerts_flag_wrong_address_register():
+    assert any("vouvoiement" in a for a in local_alerts("Imaginez deux étoiles.", tone="tu"))
+    assert any("vouvoiement" in a for a in local_alerts("Votre étoile brille.", tone="tu"))
+    assert not any("vouvoiement" in a for a in local_alerts("Imagine deux étoiles.", tone="tu"))
+    assert any("tutoiement" in a for a in local_alerts("Imagine deux étoiles.", tone="vous"))
+    assert local_alerts("Imaginez deux étoiles.") == []  # ton non précisé : pas de contrôle
+    assert any("crucial" in a for a in local_alerts("Une étape cruciale."))
