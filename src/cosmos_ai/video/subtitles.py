@@ -68,7 +68,11 @@ def _escape(text: str) -> str:
 
 
 def build_ass(
-    script: str, duration: float, cfg: VideoConfig, brand: str = "COSMOS EN POCHE"
+    script: str,
+    duration: float,
+    cfg: VideoConfig,
+    brand: str = "COSMOS EN POCHE",
+    tail: float = 0.8,
 ) -> str:
     """Sous-titres blancs, bien lisibles, et petit filigrane de la page en haut."""
     chunks = split_chunks(script)
@@ -87,6 +91,8 @@ def build_ass(
         "BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
         f"Style: Default,{cfg.font_name},{size},&H00FFFFFF,&H00FFFFFF,&H00200A05,&H80000000,"
         f"-1,0,0,0,100,100,0,0,1,5,2,2,90,90,{round(cfg.height * 0.2)},1",
+        f"Style: Cta,{cfg.font_name},{round(cfg.height * 0.026)},&H0040C8F0,&H0040C8F0,&H00200A05,&H00000000,"
+        f"-1,0,0,0,100,100,2,0,1,4,2,2,40,40,{round(cfg.height * 0.34)},1",
         f"Style: Brand,{cfg.font_name},{small},&H00E8C9A0,&H00E8C9A0,&H00200A05,&H00000000,"
         f"-1,0,0,0,100,100,6,0,1,2,0,8,60,60,{round(cfg.height * 0.07)},1",
         "",
@@ -94,6 +100,12 @@ def build_ass(
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
         f"Dialogue: 0,{_stamp(0)},{_stamp(duration)},Brand,,0,0,0,,{_escape(brand)}",
     ]
+    if cfg.end_card:  # « Abonne-toi · Commente · Partage » pendant les dernières secondes
+        shown = min(3.5, max(duration, 1.0))
+        lines.append(
+            f"Dialogue: 2,{_stamp(max(0.0, duration - shown))},{_stamp(duration + tail)},Cta,,0,0,0,,"
+            f"{{\\fad(400,300)}}{_escape(cfg.end_card)}"
+        )
     for chunk, (start, end) in zip(chunks, timings(chunks, duration)):
         lines.append(f"Dialogue: 1,{_stamp(start)},{_stamp(end)},Default,,0,0,0,,{_escape(chunk)}")
     return "\n".join(lines) + "\n"

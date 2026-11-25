@@ -17,7 +17,7 @@ class EdgeTTS:
         self,
         voice: str = "fr-FR-HenriNeural",
         rate: str = "+0%",
-        timeout: float = 180.0,
+        timeout: float = 900.0,
         runner: Callable = subprocess.run,
     ) -> None:
         self.voice = voice

@@ -39,7 +39,12 @@ class TTSProvider(Protocol):
 
 class VideoRenderer(Protocol):
     def render(
-        self, script: str, assets: list[MediaAsset], voice: Path, out_path: Path
+        self,
+        script: str,
+        assets: list[MediaAsset],
+        voice: Path,
+        out_path: Path,
+        music: Path | None = None,
     ) -> Path: ...
 
 

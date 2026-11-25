@@ -85,6 +85,7 @@ class ContentConfig:
     max_age_days: int = 14
     candidates: int = 5
     tone: str = "tu"
+    call_to_action: str = ""  # phrase finale de la voix et de la légende (abonne-toi, commente…)
     min_seconds: int = 30
     target_seconds: int = 50
     max_seconds: int = 90
@@ -104,13 +105,25 @@ class VideoConfig:
     rate: str = "+0%"  # vitesse de la voix : "-5%" plus lent, "+5%" plus rapide
     width: int = 1080
     height: int = 1920
-    fps: int = 25
+    fps: int = 60  # images par seconde : 30 fluide, 60 très fluide mais montage bien plus long
     crf: int = 23  # qualité H.264 : plus bas = meilleure qualité et fichier plus gros
-    max_images: int = 5
+    max_images: int = 3
     image_queries: int = 3
     output_dir: str = "output"
     font_name: str = "Roboto"
     font_dir: str = ""  # dossier de polices ; vide = /system/fonts s'il existe (Android)
+    seconds_per_plan: int = 10  # un plan (image ou vidéo) toutes les N secondes : plus de plans si la vidéo est longue
+    max_plans: int = 40  # plafond de plans par vidéo (limite les téléchargements et la durée du montage)
+    max_clips: int = 3  # courtes vidéos NASA mêlées aux images (0 = images seulement)
+    transition_seconds: float = 0.7  # durée du fondu entre deux plans
+    music: bool = True  # musique d'ambiance sous la voix
+    music_file: str = ""  # ta propre musique (mp3/m4a/wav) ; vide = ambiance générée, libre de droits
+    music_volume: float = 0.2  # niveau de la musique (0.05 à 0.5)
+    sfx: bool = True  # petits effets sonores aux transitions
+    clip_sources: tuple[str, ...] = ("pexels", "nasa")  # sources des courtes vidéos, utilisées à tour de rôle
+    clip_quality: str = "haute"  # "haute" (1080p, 4K si disponible) ou "standard" (720p, plus léger)
+    max_clip_mb: int = 80  # taille maximale d'une vidéo téléchargée (Mo) : protège ton forfait Internet
+    end_card: str = "ABONNE-TOI · COMMENTE · PARTAGE"  # carton affiché à la fin ; vide = aucun
 
 
 @dataclass(frozen=True)
@@ -191,10 +204,14 @@ def _parse_content(data: Mapping) -> ContentConfig:
     tone = data.get("tone", "tu")
     if tone not in VALID_TONES:
         raise ConfigError(f"content.tone invalide : {tone!r} (attendu : {', '.join(VALID_TONES)})")
+    cta = data.get("call_to_action", "")
+    if not isinstance(cta, str) or len(cta) > 300 or re.search(r"[#{}<>]", cta):
+        raise ConfigError("content.call_to_action doit être un texte de 300 caractères maximum, sans # { } < >")
+    cta = " ".join(cta.split())
 
-    minimum = _int_between(data, "min_seconds", 30, 15, 180)
-    target = _int_between(data, "target_seconds", 50, 15, 180)
-    maximum = _int_between(data, "max_seconds", 90, 15, 180)
+    minimum = _int_between(data, "min_seconds", 30, 15, 600)
+    target = _int_between(data, "target_seconds", 50, 15, 600)
+    maximum = _int_between(data, "max_seconds", 90, 15, 600)
     if not minimum <= target <= maximum:
         raise ConfigError("content : il faut min_seconds <= target_seconds <= max_seconds")
 
@@ -231,6 +248,7 @@ def _parse_content(data: Mapping) -> ContentConfig:
         max_age_days=_int_between(data, "max_age_days", 14, 1, 90),
         candidates=_int_between(data, "candidates", 5, 1, 10),
         tone=tone,
+        call_to_action=cta,
         min_seconds=minimum,
         target_seconds=target,
         max_seconds=maximum,
@@ -258,6 +276,26 @@ def _parse_video(raw: Mapping) -> VideoConfig:
             raise ConfigError(f"video.{key} invalide : {hint}")
         return value
 
+    def decimal(key: str, low: float, high: float) -> float:
+        value = raw.get(key, getattr(d, key))
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not low <= value <= high:
+            raise ConfigError(f"video.{key} doit être un nombre entre {low} et {high}")
+        return float(value)
+
+    def flag(key: str) -> bool:
+        value = raw.get(key, getattr(d, key))
+        if not isinstance(value, bool):
+            raise ConfigError(f"video.{key} doit être true ou false")
+        return value
+
+    quality = raw.get("clip_quality", d.clip_quality)
+    if quality not in ("haute", "standard"):
+        raise ConfigError("video.clip_quality doit être « haute » ou « standard »")
+
+    sources = _str_list(raw.get("clip_sources", list(d.clip_sources)), "video.clip_sources")
+    if not set(sources) <= {"pexels", "nasa"}:
+        raise ConfigError("video.clip_sources : valeurs possibles « pexels » et « nasa »")
+
     return VideoConfig(
         voice=text("voice", r"[A-Za-z]{2,3}-[A-Za-z]{2,4}-[A-Za-z0-9]+", "exemple fr-FR-HenriNeural"),
         rate=text("rate", r"[+-]\d{1,3}%", "exemple +0% ou -5%"),
@@ -270,6 +308,18 @@ def _parse_video(raw: Mapping) -> VideoConfig:
         output_dir=text("output_dir", r"[\w./-]+", "chemin sans espace ni caractère spécial"),
         font_name=text("font_name", r"[\w .-]+", "nom de police simple"),
         font_dir=text("font_dir", r"[\w./-]+", "chemin sans espace", allow_empty=True),
+        max_clips=number("max_clips", 0, 4),
+        seconds_per_plan=number("seconds_per_plan", 4, 60),
+        max_plans=number("max_plans", 3, 80),
+        transition_seconds=decimal("transition_seconds", 0.3, 1.5),
+        music=flag("music"),
+        music_file=text("music_file", r"[\w./ -]+", "chemin du fichier audio", allow_empty=True),
+        music_volume=decimal("music_volume", 0.05, 0.5),
+        sfx=flag("sfx"),
+        clip_sources=sources,
+        clip_quality=quality,
+        max_clip_mb=number("max_clip_mb", 10, 400),
+        end_card=text("end_card", r"[^{}\\\n,]{1,60}", "texte court sans virgule ni accolade", allow_empty=True),
     )
 
 

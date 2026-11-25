@@ -65,6 +65,9 @@ content:
   max_age_days: 14          # on ignore les actualités plus anciennes
   candidates: 8             # nombre de sujets présentés à l'IA pour le choix
   tone: tu                  # tu | vous
+  # Phrase finale de la voix off ET de la légende : pousse à s'abonner, commenter, partager.
+  # Vide = aucun appel. L'IA termine déjà son texte par une question qui invite à commenter.
+  call_to_action: "Si tu veux explorer l'Univers chaque jour, abonne-toi à Cosmos en Poche, dis-moi ta réponse en commentaire et partage cette vidéo."
   min_seconds: 30           # durée du Reel : 30 à 90 secondes
   target_seconds: 50
   max_seconds: 90
@@ -189,12 +192,25 @@ content:
 video:
   voice: fr-FR-HenriNeural     # voix grave ; essaie aussi fr-FR-DeniseNeural (voix féminine)
   rate: "+0%"                  # vitesse : "-5%" plus posé, "+5%" plus dynamique
-  max_images: 5                # nombre d'images différentes dans un Reel
+  fps: 60                      # images par seconde : 60 très fluide (montage long sur téléphone) ; 30 plus rapide
+  max_images: 3                # nombre d'images différentes dans un Reel
   image_queries: 3             # recherches d'images demandées à l'IA
   output_dir: output
   font_name: Roboto            # police des sous-titres (Roboto existe sur Android)
   font_dir: ""                 # vide = /system/fonts si présent
   crf: 23                      # qualité vidéo (18 = très bonne, 28 = légère)
+  seconds_per_plan: 10         # un plan (image ou vidéo) toutes les 10 s : une vidéo longue a plus de plans
+  max_plans: 40                # plafond de plans par vidéo (limite téléchargements et durée du montage)
+  max_clips: 3                 # courtes vidéos NASA mêlées aux images (0 = images seulement)
+  clip_sources: [pexels, nasa] # d'où viennent les vidéos, à tour de rôle (Pexels demande PEXELS_API_KEY, gratuite)
+  clip_quality: haute          # haute = 1080p (4K si disponible) ; standard = 720p, plus léger
+  max_clip_mb: 80              # taille maximale d'une vidéo (Mo) : protège ton forfait Internet
+  end_card: "ABONNE-TOI · COMMENTE · PARTAGE"   # carton de fin ; "" = aucun
+  transition_seconds: 0.7      # durée du fondu entre deux plans
+  music: true                  # musique d'ambiance sous la voix (générée, libre de droits)
+  music_file: ""               # ou ta propre musique, ex. assets/musique.mp3 (droits à vérifier)
+  music_volume: 0.2            # niveau de la musique : 0.05 (discrète) à 0.5 (forte)
+  sfx: true                    # petits effets sonores aux transitions
 
 llm:
   # Pause d'un fournisseur dont le quota est atteint, si celui-ci n'indique pas

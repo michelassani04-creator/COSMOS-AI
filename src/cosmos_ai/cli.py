@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import importlib.util
 import shutil
 
@@ -15,6 +16,7 @@ from .llm import build_router, provider_status
 from .memory import EditorialMemory
 from .services import ConsoleNotifier, NotConnectedPublisher
 from .video.images import NasaImageSource
+from .video.pexels import KEY_ENV, PexelsVideoSource
 from .video.produce import produce_video
 from .video.render import FfmpegRenderer
 from .video.voice import EdgeTTS
@@ -51,6 +53,9 @@ def _cmd_check(config: AppConfig) -> int:
     ffmpeg = "installé" if shutil.which("ffmpeg") and shutil.which("ffprobe") else "ABSENT (pkg install ffmpeg)"
     edge = "installé" if importlib.util.find_spec("edge_tts") else "ABSENT (pip install edge-tts)"
     print(f"Vidéo : FFmpeg {ffmpeg} ; edge-tts {edge} ; voix {config.video.voice}")
+    if "pexels" in config.video.clip_sources and config.video.max_clips > 0:
+        pexels = "clé présente" if PexelsVideoSource.from_env() else f"clé ABSENTE ({KEY_ENV} : voir docs/video.md)"
+        print(f"Vidéos : sources {', '.join(config.video.clip_sources)} ; Pexels : {pexels}")
     return 0
 
 
@@ -99,7 +104,22 @@ def _cmd_news(config: AppConfig) -> int:
     return 0
 
 
-def _cmd_run(config: AppConfig) -> int:
+def _cmd_run(config: AppConfig, duration: int | None = None) -> int:
+    if duration is not None:
+        if not 30 <= duration <= 600:
+            print("--duree doit être entre 30 et 600 secondes.")
+            return 2
+        config = dataclasses.replace(
+            config,
+            content=dataclasses.replace(
+                config.content,
+                min_seconds=round(duration * 0.8),
+                target_seconds=duration,
+                max_seconds=round(duration * 1.1),
+            ),
+        )
+        if duration > 90:
+            print("Format long : au-delà de 90 s, ce n'est plus un Reel pour l'API de Facebook (3 à 90 s).")
     if config.mode != "manual":
         print("Mode « auto » refusé : Facebook n'est pas encore connecté. Utilise mode: manual.")
         return 1
@@ -129,7 +149,12 @@ def _cmd_run(config: AppConfig) -> int:
     return 1
 
 
-def _cmd_video(config: AppConfig, draft_id: int, use_images: bool) -> int:
+def _cmd_video(config: AppConfig, draft_id: int, use_images: bool, fps: int | None = None) -> int:
+    if fps is not None:
+        if not 15 <= fps <= 60:
+            print("--fps doit être entre 15 et 60.")
+            return 2
+        config = dataclasses.replace(config, video=dataclasses.replace(config.video, fps=fps))
     memory = _memory(config)
     draft = memory.get_draft(draft_id)
     if draft is None:
@@ -142,14 +167,29 @@ def _cmd_video(config: AppConfig, draft_id: int, use_images: bool) -> int:
         llm = build_router(config.llm)
     except ProviderNotAvailable:
         llm = None  # recherches d'images génériques
+    image_source = NasaImageSource()
+    clip_sources = []
+    for name in config.video.clip_sources:
+        if name == "nasa":
+            clip_sources.append(image_source)
+        elif name == "pexels":
+            pexels = PexelsVideoSource.from_env()
+            if pexels:
+                clip_sources.append(pexels)
+            else:
+                print(f"Pexels ignoré : variable {KEY_ENV} absente (voir docs/video.md).")
     try:
         result = produce_video(
             draft,
             config,
             llm=llm,
             tts=EdgeTTS(config.video.voice, config.video.rate),
-            source=NasaImageSource() if use_images else None,
-            renderer=FfmpegRenderer(config.video),
+            source=image_source if use_images else None,
+            clip_sources=clip_sources if use_images else [],
+            renderer=FfmpegRenderer(
+                config.video,
+                on_progress=lambda pct: print(f"\r  Montage : {pct} %   ", end="", flush=True),
+            ),
             use_images=use_images,
             progress=print,
         )
@@ -158,10 +198,13 @@ def _cmd_video(config: AppConfig, draft_id: int, use_images: bool) -> int:
         return 1
     memory.set_video_path(draft_id, str(result.path))
     size = result.path.stat().st_size / 1_000_000
-    print(f"\nVidéo prête : {result.path} ({size:.1f} Mo, {result.images} images)")
+    print(f"\n\nVidéo prête : {result.path} ({size:.1f} Mo, {result.images} images, {result.clips} vidéos)")
     print(f"Crédits des images : {result.credits_path}")
+    counts: dict[str, int] = {}
     for note in result.notes:
-        print(f"  Note : {note}")
+        counts[note] = counts.get(note, 0) + 1
+    for note, times in counts.items():
+        print(f"  Note : {note}" + (f" (×{times})" if times > 1 else ""))
     print("Rien n'est publié. Ouvre la vidéo dans ta galerie ou ton gestionnaire de fichiers.")
     return 0
 
@@ -204,10 +247,12 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("ping", help="teste les fournisseurs d'IA avec une vraie requête")
     sub.add_parser("demo", help="lance un cycle de démonstration (sans réseau)")
     sub.add_parser("news", help="lit les flux d'actualités et affiche les sujets populaires")
-    sub.add_parser("run", help="produit un brouillon de Reel (rien n'est publié)")
+    run = sub.add_parser("run", help="produit un brouillon de Reel (rien n'est publié)")
+    run.add_argument("--duree", type=int, help="durée visée en secondes (30 à 600), ex. 300 pour 5 minutes")
     video = sub.add_parser("video", help="produit la vidéo d'un brouillon (voix, images, montage)")
     video.add_argument("id", type=int)
     video.add_argument("--sans-images", action="store_true", help="fond sombre généré, sans images")
+    video.add_argument("--fps", type=int, help="images par seconde pour cet essai (15 à 60), ex. 30 pour aller plus vite")
     sub.add_parser("drafts", help="liste les brouillons")
     show = sub.add_parser("show", help="affiche un brouillon")
     show.add_argument("id", type=int)
@@ -228,9 +273,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "news":
         return _cmd_news(config)
     if args.command == "run":
-        return _cmd_run(config)
+        return _cmd_run(config, args.duree)
     if args.command == "video":
-        return _cmd_video(config, args.id, not args.sans_images)
+        return _cmd_video(config, args.id, not args.sans_images, args.fps)
     if args.command == "drafts":
         return _cmd_drafts(config)
     if args.command == "show":

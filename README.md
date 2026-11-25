@@ -15,7 +15,7 @@ Agent IA autonome qui gère la page Facebook **Cosmos en Poche** (vulgarisation 
 - Phase 1 terminée : fondations (structure, configuration, routeur, mémoire éditoriale, agent et validation, tests, CI).
 - Phase 2 terminée : intégrations Gemini et Groq (API officielles), tests avec réponses simulées.
 - Phase 3 terminée : veille (flux RSS), sujets populaires, choix du sujet, scénario aux consignes éditoriales de la page, vérification, brouillon avec sources.
-- Phase 4 codée (à valider sur ton téléphone) : voix off Edge TTS, images de la NASA, sous-titres incrustés, montage vertical 9:16 avec FFmpeg. Voir `docs/video.md`.
+- Phase 4 codée (à valider sur ton téléphone) : voix off Edge TTS, images et courtes vidéos de la NASA, transitions fluides, musique d'ambiance, effets sonores, sous-titres incrustés, montage vertical 9:16 avec FFmpeg. Voir `docs/video.md`.
 - Pas encore branché : Facebook (phase 5). Voir `docs/feuille-de-route.md`.
 
 ## Utilisation

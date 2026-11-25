@@ -19,13 +19,25 @@ def fence(text: str) -> str:
     return text.replace(DATA_OPEN, "[balise retirée]").replace(DATA_CLOSE, "[balise retirée]")
 
 
-def word_limits(cfg: ContentConfig) -> tuple[int, int, int]:
-    """Nombre de mots (minimum, cible, maximum) pour tenir dans la durée voulue."""
-    return (
+def word_limits(cfg: ContentConfig, reserve: int = 0) -> tuple[int, int, int]:
+    """Nombre de mots (minimum, cible, maximum) pour tenir dans la durée voulue.
+
+    `reserve` : mots déjà pris par la phrase d'appel à l'action ajoutée après le script.
+    """
+    low, target, high = (
         round(cfg.min_seconds * WORDS_PER_SECOND),
         round(cfg.target_seconds * WORDS_PER_SECOND),
         round(cfg.max_seconds * WORDS_PER_SECOND),
     )
+    return max(30, low - reserve), max(40, target - reserve), max(50, high - reserve)
+
+
+def with_call_to_action(script: str, cta: str) -> str:
+    """Ajoute la phrase d'appel à l'action à la fin de la voix off (une seule fois)."""
+    cta = " ".join(cta.split())
+    if not cta or cta.lower() in script.lower():
+        return script
+    return f"{script.rstrip()} {cta}"
 
 
 def _bullets(title: str, lines: tuple[str, ...]) -> str:
@@ -74,7 +86,8 @@ def choose_prompt(candidates: list[tuple[str, list[str], str]], recent_topics: l
 def script_prompt(
     topic: str, source_text: str, cfg: ContentConfig, feedback: str = ""
 ) -> str:
-    low, target, high = word_limits(cfg)
+    cta_words = len(cfg.call_to_action.split())
+    low, target, high = word_limits(cfg, cta_words)
     if source_text:
         material = (
             f"Actualité de départ (sources) :\n{DATA_OPEN}\n{fence(source_text)}\n{DATA_CLOSE}\n\n"
@@ -101,9 +114,27 @@ def script_prompt(
         f"Sujet : {topic}\n\n{material}\n\n"
         f"Écris le texte de la voix off d'un Reel de {cfg.min_seconds} à {cfg.max_seconds} secondes "
         f"(vise environ {cfg.target_seconds} s, soit {low} à {high} mots, idéalement {target}).\n"
-        "Structure : une accroche intrigante, une explication progressive, une analogie "
-        "intelligente, une conclusion qui invite à réfléchir. Distingue clairement les faits "
-        "établis, les hypothèses et les spéculations.\n"
+        + (
+            "Structure : une accroche intrigante, puis 4 à 6 parties qui se suivent (contexte, "
+            "découverte, comment on le sait, ce que cela change, limites et incertitudes), avec "
+            "une transition naturelle entre chaque partie, une analogie intelligente, et une "
+            "conclusion qui invite à réfléchir. Reste précis : n'ajoute pas de détails pour "
+            "allonger. S'il manque de matière dans les sources, appuie-toi sur des connaissances "
+            "scientifiques solidement établies, présentées comme telles. Distingue clairement "
+            "les faits établis, les hypothèses et les spéculations.\n"
+            if cfg.target_seconds > 120
+            else "Structure : une accroche intrigante, une explication progressive, une analogie "
+            "intelligente, une conclusion qui invite à réfléchir. Distingue clairement les faits "
+            "établis, les hypothèses et les spéculations.\n"
+        )
+        + (
+            "Termine par UNE question ouverte, liée au sujet et sans orienter la réponse, qui "
+            "donne envie de répondre en commentaire. La phrase d'appel à s'abonner est ajoutée "
+            "automatiquement après ton texte : ne l'écris pas.\n"
+            if cfg.call_to_action
+            else ""
+        )
+        +
         "Le script est UNIQUEMENT le texte parlé : pas de didascalies, pas d'indications "
         "de plan, pas de hashtags, pas d'émojis. N'invente AUCUNE citation de scientifique.\n\n"
         "Réponds UNIQUEMENT par un objet JSON de la forme :\n"
@@ -148,7 +179,9 @@ def visual_prompt(topic: str, script: str, count: int) -> str:
         f"Sujet : {topic}\n\n"
         f"Script :\n{DATA_OPEN}\n{fence(script)}\n{DATA_CLOSE}\n\n"
         f"Propose {count} recherches d'images EN ANGLAIS, de 2 à 4 mots chacune, qui illustrent "
-        "ce que le script décrit (objet céleste, télescope, mission, phénomène). Pars du plus "
-        "précis au plus général. Évite les portraits, logos et réunions.\n"
+        "ce que le script décrit (objet céleste, télescope, mission, phénomène). La bibliothèque "
+        "ne trouve rien avec des requêtes trop pointues : emploie des termes courants (« "
+        "galaxy », « James Webb telescope », « black hole », « nebula », « Mars rover »). Mets "
+        "en premier la requête la plus générale. Évite les portraits, logos et réunions.\n"
         'Réponds UNIQUEMENT par un objet JSON : {"requetes": ["...", "..."]}'
     )

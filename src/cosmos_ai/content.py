@@ -162,6 +162,9 @@ class ChooseTopic:
                 log.warning("choix par l'IA impossible, on prend le sujet le mieux classé")
         ctx.topic = chosen.title
         ctx.primary_url = next((item.url for item in chosen.items if item.url), "")
+        ctx.related_urls = [
+            item.url for item in chosen.items if item.url and item.url != ctx.primary_url
+        ][:2]
         lines, refs = [], []
         for item in chosen.items[:3]:
             lines.append(f"- {item.title} ({item.publisher or item.source}) : {item.summary}")
@@ -197,10 +200,18 @@ class FetchArticle:
     def run(self, ctx: CycleContext) -> None:
         if not self.cfg.fetch_articles or not ctx.primary_url or ctx.topic is None:
             return
-        text = fetch_article_text(ctx.primary_url, self.transport)
-        if text:
-            ctx.source_text += f"\n\nTexte de l'article ({ctx.primary_url}) :\n{text}"
-            ctx.notes["article"] = "article lu en entier"
+        long_format = self.cfg.target_seconds > 120
+        # une vidéo longue demande plus de matière : plus de texte, et les autres articles du sujet
+        limit = max(6000, self.cfg.target_seconds * 80) if long_format else 6000
+        urls = [ctx.primary_url] + (ctx.related_urls if long_format else [])
+        read = 0
+        for url in urls:
+            text = fetch_article_text(url, self.transport, limit=limit)
+            if text:
+                read += 1
+                ctx.source_text += f"\n\nTexte de l'article ({url}) :\n{text}"
+        if read:
+            ctx.notes["article"] = "article lu en entier" if read == 1 else f"{read} articles lus en entier"
         else:
             ctx.notes["article"] = "article illisible : le script s'appuie sur le titre et le résumé seulement"
 
@@ -215,9 +226,10 @@ class WriteScript:
     def run(self, ctx: CycleContext) -> None:
         if ctx.topic is None:
             return
-        low, _, high = prompts.word_limits(self.cfg)
+        low, _, high = prompts.word_limits(self.cfg, len(self.cfg.call_to_action.split()))
         feedback = ""
-        for _attempt in range(2):
+        attempts = 3 if self.cfg.target_seconds > 120 else 2
+        for _attempt in range(attempts):
             answer = self.llm.generate(
                 prompts.script_prompt(ctx.topic, ctx.source_text, self.cfg, feedback),
                 system=prompts.system_prompt(self.cfg),
@@ -242,7 +254,7 @@ class WriteScript:
                 ctx.caption = caption
                 ctx.notes["titre"] = title[:100]
                 return
-        raise ContentError(f"scénario inutilisable après 2 essais ({feedback})")
+        raise ContentError(f"scénario inutilisable après {attempts} essais ({feedback})")
 
 
 class ReviewScript:
@@ -255,7 +267,7 @@ class ReviewScript:
     def run(self, ctx: CycleContext) -> None:
         if ctx.script is None or ctx.topic is None:
             return
-        low, _, high = prompts.word_limits(self.cfg)
+        low, _, high = prompts.word_limits(self.cfg, len(self.cfg.call_to_action.split()))
         lines: list[str] = []
         if "article" in ctx.notes:
             lines.append(f"Source : {ctx.notes['article']}.")
@@ -296,10 +308,16 @@ class ReviewScript:
 class BuildDraft:
     name = "brouillon"
 
+    def __init__(self, cfg: ContentConfig | None = None) -> None:
+        self.cta = cfg.call_to_action if cfg else ""
+
     def run(self, ctx: CycleContext) -> None:
         if ctx.script is None or ctx.topic is None:
             return
         caption = ctx.caption or ctx.notes.get("titre", ctx.topic)
+        if self.cta:  # appel à s'abonner / commenter : dans la légende et à la fin de la voix off
+            caption = f"{caption}\n\n{self.cta}"
+            ctx.script = prompts.with_call_to_action(ctx.script, self.cta)
         if ctx.sources:
             names = ", ".join(sorted({line.split(" : ")[0] for line in ctx.sources.splitlines()}))
             caption = f"{caption}\n\nSources : {names}"
@@ -326,7 +344,7 @@ def build_steps(
         FetchArticle(content, transport),
         WriteScript(llm, content),
         ReviewScript(llm, content),
-        BuildDraft(),
+        BuildDraft(content),
     ]
 
 
