@@ -68,8 +68,8 @@ content:
   # Phrase finale de la voix off ET de la légende : pousse à s'abonner, commenter, partager.
   # Vide = aucun appel. L'IA termine déjà son texte par une question qui invite à commenter.
   call_to_action: "Si tu veux explorer l'Univers chaque jour, abonne-toi à Cosmos en Poche, dis-moi ta réponse en commentaire et partage cette vidéo."
-  min_seconds: 30           # durée du Reel : 30 à 90 secondes
-  target_seconds: 50
+  min_seconds: 75           # durée du Reel : environ 90 secondes (limite de l'API Reels de Facebook)
+  target_seconds: 85
   max_seconds: 90
 
   # Mots qui font monter un sujet dans le classement (détection des sujets populaires).

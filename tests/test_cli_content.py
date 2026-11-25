@@ -38,7 +38,7 @@ def patch_network(monkeypatch, body=None, status=200):
 # --------------------------------------------------------- configuration livrée ---
 def test_shipped_config_carries_the_editorial_identity():
     cfg = load_config(ROOT / "config.yaml").content
-    assert cfg.tone == "tu" and (cfg.min_seconds, cfg.max_seconds) == (30, 90)
+    assert cfg.tone == "tu" and (cfg.min_seconds, cfg.max_seconds) == (75, 90)
     assert cfg.visual.format == "9:16" and "noir spatial" in cfg.visual.palette
     assert len(cfg.editorial.rules) == 7 and len(cfg.editorial.priority_topics) == 8
     assert "Soleil" in cfg.editorial.example
@@ -95,7 +95,7 @@ def test_news_command_reports_broken_sources(config_file, monkeypatch, capsys):
 
 def test_run_produces_a_draft_and_never_publishes(config_file, monkeypatch, capsys):
     patch_network(monkeypatch)
-    script = json.dumps({"titre": "Titre du Reel", "script": " ".join(["mot"] * 120), "legende": "Légende."})
+    script = json.dumps({"titre": "Titre du Reel", "script": " ".join(["mot"] * 190), "legende": "Légende."})
     llm = FakeLLM("fake", responses=['{"choix": 1}', script, json.dumps({"verdict": "ok", "problemes": []})])
     monkeypatch.setattr(cli, "build_router", lambda cfg: LLMRouter([llm]))
     assert cli.main(["--config", config_file, "run"]) == 0
