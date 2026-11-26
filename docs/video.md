@@ -94,3 +94,14 @@ Les images et vidéos de la bibliothèque de la NASA sont en général utilisabl
 - `fps: 60` dans `config.yaml`. Le montage de 5 minutes à 60 images/s est très long sur un téléphone : pour un essai, `python -m cosmos_ai video ID --fps 30`.
 - Au-delà de 120 s, le zoom animé est désactivé (trop lent) ; les transitions restent.
 - Facebook : l'API des Reels accepte 3 à 90 s. Une vidéo de 5 minutes sera sans doute publiée comme vidéo normale en phase 5 (à vérifier alors).
+
+## Corriger un brouillon avant le montage
+
+`python -m cosmos_ai edit ID` ouvre la voix off et la légende dans nano. Garde les deux repères `=== VOIX OFF ===` et `=== LÉGENDE ===`. À la sortie, les alertes (mots emphatiques, guillemets, vouvoiement) sont recalculées, et l'ancienne vidéo est invalidée : refais-la avec `video ID`. Les chiffres et les faits modifiés restent à vérifier avec les sources.
+
+## Connexion instable
+
+- Avant le montage, `video` teste si les serveurs de la voix et de la NASA répondent et prévient sinon.
+- Les requêtes (articles, recherches, images, vidéos) sont refaites jusqu'à 3 fois avec une pause qui s'allonge ; la voix jusqu'à 4 fois.
+- Les fournisseurs d'IA : si tous échouent sur une panne passagère (503, réponse vide), l'agent refait jusqu'à 3 tours avec une pause de 5 s, 10 s. Une clé refusée n'est pas réessayée.
+- Si la connexion est vraiment coupée, rien ne remplace un bon réseau : relance quand il revient.

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Callable
 
@@ -19,13 +20,31 @@ class EdgeTTS:
         rate: str = "+0%",
         timeout: float = 900.0,
         runner: Callable = subprocess.run,
+        retries: int = 0,
+        pause: float = 4.0,
+        sleep: Callable[[float], None] = time.sleep,
     ) -> None:
+        self.retries = max(0, retries)
+        self.pause = pause
+        self._sleep = sleep
         self.voice = voice
         self.rate = rate
         self.timeout = timeout
         self._run = runner
 
     def synthesize(self, text: str, out_path: Path) -> Path:
+        """Voix off ; refait l'essai après une pause si le réseau a coupé."""
+        for attempt in range(self.retries + 1):
+            try:
+                return self._synthesize_once(text, out_path)
+            except VideoError as exc:
+                permanent = "pas installé" in str(exc) or "lancement impossible" in str(exc)
+                if permanent or attempt >= self.retries:
+                    raise
+                self._sleep(self.pause * (attempt + 1))
+        raise AssertionError("inaccessible")
+
+    def _synthesize_once(self, text: str, out_path: Path) -> Path:
         out_path = Path(out_path)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         text_file = out_path.with_suffix(".txt")

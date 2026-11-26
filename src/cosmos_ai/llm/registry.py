@@ -49,4 +49,4 @@ def build_router(llm_cfg: LLMConfig) -> LLMRouter:
             log.warning("fournisseur ignoré : %s", exc)
     if not providers:
         raise ProviderNotAvailable("aucun fournisseur d'IA utilisable (clés d'API absentes ?)")
-    return LLMRouter(providers, cooldown_seconds=llm_cfg.cooldown_seconds)
+    return LLMRouter(providers, cooldown_seconds=llm_cfg.cooldown_seconds, rounds=3, round_pause=5.0)

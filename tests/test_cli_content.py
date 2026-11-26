@@ -1,4 +1,5 @@
 import json
+import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -33,6 +34,7 @@ def config_file(tmp_path):
 def patch_network(monkeypatch, body=None, status=200):
     transport = FakeTransport(resp(status, body if body is not None else rss_with_recent_item()))
     monkeypatch.setattr(news, "UrllibTransport", lambda: transport)
+    monkeypatch.setattr("cosmos_ai.retry.time.sleep", lambda seconds: None)  # pas de vraie pause
 
 
 # --------------------------------------------------------- configuration livrée ---
@@ -217,3 +219,121 @@ def test_check_reports_video_tools(config_file, capsys):
     cli.main(["--config", config_file, "check"])
     out = capsys.readouterr().out
     assert "Vidéo : FFmpeg" in out and "fr-FR-HenriNeural" in out
+
+
+# ------------------------------------------------------- nouvelles tentatives et edit ---
+def test_retrying_transport_retries_then_gives_up():
+    from cosmos_ai.llm.http import TransportError
+    from cosmos_ai.retry import RetryingTransport
+
+    pauses = []
+
+    class Flaky:
+        calls = 0
+
+        def get(self, url, headers, timeout):
+            Flaky.calls += 1
+            if Flaky.calls < 3:
+                raise TransportError("coupure")
+            return resp(200, "ok")
+
+    assert RetryingTransport(Flaky(), attempts=3, pause=2, sleep=pauses.append).get("u", {}, 1).body == "ok"
+    assert pauses == [2, 4]
+
+    class Dead:
+        def get(self, url, headers, timeout):
+            raise TransportError("coupure")
+
+    with pytest.raises(TransportError):
+        RetryingTransport(Dead(), attempts=2, sleep=lambda s: None).get("u", {}, 1)
+
+
+def test_retrying_opener_ignores_404_but_retries_network_errors():
+    import urllib.error
+    from cosmos_ai.retry import retrying_opener
+
+    calls = []
+
+    def flaky(url, timeout):
+        calls.append(url)
+        if len(calls) < 2:
+            raise urllib.error.URLError("dns")
+        return "ouvert"
+
+    assert retrying_opener(flaky, attempts=3, sleep=lambda s: None)("u", 1) == "ouvert" and len(calls) == 2
+
+    def missing(url, timeout):
+        raise urllib.error.HTTPError(url, 404, "nf", {}, None)
+
+    with pytest.raises(urllib.error.HTTPError):
+        retrying_opener(missing, attempts=3, sleep=lambda s: None)("u", 1)
+
+
+def test_router_runs_another_round_after_a_transient_failure_but_not_after_a_refused_key():
+    from cosmos_ai.errors import AllProvidersFailed, AuthenticationError, ProviderUnavailable
+
+    class Flaky:
+        name = "flaky"
+        calls = 0
+
+        def generate(self, prompt, *, system=None):
+            Flaky.calls += 1
+            if Flaky.calls < 3:
+                raise ProviderUnavailable("flaky: HTTP 503")
+            return "bonjour"
+
+    router = LLMRouter([Flaky()], rounds=3, round_pause=1, sleep=lambda s: None)
+    assert router.generate("x") == "bonjour" and Flaky.calls == 3
+
+    class Refused:
+        name = "refused"
+        calls = 0
+
+        def generate(self, prompt, *, system=None):
+            Refused.calls += 1
+            raise AuthenticationError("refused: clé refusée")
+
+    with pytest.raises(AllProvidersFailed):
+        LLMRouter([Refused()], rounds=3, sleep=lambda s: None).generate("x")
+    assert Refused.calls == 1
+
+
+def test_edit_command_updates_text_flags_alerts_and_invalidates_video(config_file, tmp_path, capsys):
+    cfg = load_config(config_file)
+    memory = EditorialMemory(cfg.database_path)
+    saved = memory.save_draft(Draft(topic="T", script="Ancien texte.", caption="Ancienne légende.", video_path="x.mp4"), "pending_approval")
+    new = tmp_path / "texte.txt"
+    new.write_text("=== VOIX OFF ===\nUn texte spectaculaire corrigé.\n\n=== LÉGENDE ===\nNouvelle légende.\n", encoding="utf-8")
+    assert cli.main(["--config", config_file, "edit", str(saved.id), "--fichier", str(new)]) == 0
+    out = capsys.readouterr().out
+    assert "mis à jour" in out and "spectaculaire" in out and "refais-la" in out
+    draft = EditorialMemory(cfg.database_path).get_draft(saved.id)
+    assert draft.script == "Un texte spectaculaire corrigé." and draft.caption == "Nouvelle légende."
+    assert draft.video_path == "" and "corrigé à la main" in draft.review
+
+    bad = tmp_path / "mauvais.txt"
+    bad.write_text("plus de repères", encoding="utf-8")
+    assert cli.main(["--config", config_file, "edit", str(saved.id), "--fichier", str(bad)]) == 1
+    assert cli.main(["--config", config_file, "edit", "999", "--fichier", str(bad)]) == 1
+
+
+def test_voice_retries_after_a_network_failure_but_not_when_not_installed():
+    import subprocess
+    from cosmos_ai.errors import VideoError
+    from cosmos_ai.video.voice import EdgeTTS
+
+    outcomes = [subprocess.CompletedProcess([], 1, "", "ClientConnectorDNSError"), "ok"]
+
+    def runner(cmd, **kw):
+        outcome = outcomes.pop(0)
+        if outcome == "ok":
+            Path(cmd[cmd.index("--write-media") + 1]).write_bytes(b"x" * 2000)
+            return subprocess.CompletedProcess([], 0, "", "")
+        return outcome
+
+    out = Path(tempfile.mkdtemp()) / "voix.mp3"
+    assert EdgeTTS(runner=runner, retries=2, sleep=lambda s: None).synthesize("texte", out) == out
+
+    missing = lambda cmd, **kw: subprocess.CompletedProcess([], 1, "", "No module named edge_tts")
+    with pytest.raises(VideoError):
+        EdgeTTS(runner=missing, retries=2, sleep=lambda s: None).synthesize("texte", out)

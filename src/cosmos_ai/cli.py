@@ -1,11 +1,15 @@
-"""Ligne de commande : check, ping, demo, news, run, video, drafts, show, reject."""
+"""Ligne de commande : check, ping, demo, news, run, video, edit, drafts, show, reject."""
 
 from __future__ import annotations
 
 import argparse
 import dataclasses
 import importlib.util
+import functools
+import os
 import shutil
+import subprocess
+import tempfile
 
 from . import content, news, trends
 from .agent import CosmosAgent
@@ -15,7 +19,9 @@ from .errors import AllProvidersFailed, CosmosError, ProviderNotAvailable
 from .llm import build_router, provider_status
 from .memory import EditorialMemory
 from .services import ConsoleNotifier, NotConnectedPublisher
-from .video.images import NasaImageSource
+from .llm.http import UrllibTransport
+from .retry import RetryingTransport, host_reachable, retrying_opener
+from .video.images import NasaImageSource, _default_open, download_image
 from .video.pexels import KEY_ENV, PexelsVideoSource
 from .video.produce import produce_video
 from .video.render import FfmpegRenderer
@@ -130,7 +136,9 @@ def _cmd_run(config: AppConfig, duration: int | None = None) -> int:
         return 1
     memory = _memory(config)
     agent = CosmosAgent(
-        steps=content.build_steps(config, router, content.build_sources(config)),
+        steps=content.build_steps(
+            config, router, content.build_sources(config), RetryingTransport(UrllibTransport())
+        ),
         memory=memory,
         publisher=NotConnectedPublisher(),
         notifier=ConsoleNotifier(),
@@ -167,13 +175,18 @@ def _cmd_video(config: AppConfig, draft_id: int, use_images: bool, fps: int | No
         llm = build_router(config.llm)
     except ProviderNotAvailable:
         llm = None  # recherches d'images génériques
-    image_source = NasaImageSource()
+    for host, role in (("speech.platform.bing.com", "la voix"), ("images-api.nasa.gov", "les images")):
+        if not host_reachable(host):
+            print(f"Attention : {host} ({role}) ne répond pas. Internet est-il coupé ? Je réessaierai.")
+    web = RetryingTransport(UrllibTransport())
+    opener = retrying_opener(_default_open)
+    image_source = NasaImageSource(transport=web, opener=opener)
     clip_sources = []
     for name in config.video.clip_sources:
         if name == "nasa":
             clip_sources.append(image_source)
         elif name == "pexels":
-            pexels = PexelsVideoSource.from_env()
+            pexels = PexelsVideoSource.from_env(transport=web, opener=opener)
             if pexels:
                 clip_sources.append(pexels)
             else:
@@ -183,7 +196,8 @@ def _cmd_video(config: AppConfig, draft_id: int, use_images: bool, fps: int | No
             draft,
             config,
             llm=llm,
-            tts=EdgeTTS(config.video.voice, config.video.rate),
+            tts=EdgeTTS(config.video.voice, config.video.rate, retries=3),
+            downloader=functools.partial(download_image, opener=opener),
             source=image_source if use_images else None,
             clip_sources=clip_sources if use_images else [],
             renderer=FfmpegRenderer(
@@ -206,6 +220,67 @@ def _cmd_video(config: AppConfig, draft_id: int, use_images: bool, fps: int | No
     for note, times in counts.items():
         print(f"  Note : {note}" + (f" (×{times})" if times > 1 else ""))
     print("Rien n'est publié. Ouvre la vidéo dans ta galerie ou ton gestionnaire de fichiers.")
+    return 0
+
+
+EDIT_VOICE = "=== VOIX OFF ==="
+EDIT_CAPTION = "=== LÉGENDE ==="
+
+
+def _parse_edit(text: str) -> tuple[str, str] | None:
+    """Sépare le fichier d'édition en (voix off, légende) ; None si les repères ont disparu."""
+    if EDIT_VOICE not in text or EDIT_CAPTION not in text:
+        return None
+    head, _, caption = text.partition(EDIT_CAPTION)
+    script = head.partition(EDIT_VOICE)[2]
+    return script.strip(), caption.strip()
+
+
+def _cmd_edit(config: AppConfig, draft_id: int, file: str | None = None) -> int:
+    memory = _memory(config)
+    draft = memory.get_draft(draft_id)
+    if draft is None:
+        print(f"Brouillon introuvable : {draft_id}")
+        return 1
+    if draft.status == "rejected":
+        print(f"Le brouillon #{draft_id} est écarté : rien à corriger.")
+        return 1
+    if file is None:
+        path = tempfile.NamedTemporaryFile("w", suffix=f"-brouillon-{draft_id}.txt", delete=False, encoding="utf-8")
+        with path:
+            path.write(f"{EDIT_VOICE}\n{draft.script}\n\n{EDIT_CAPTION}\n{draft.caption}\n")
+        editor = os.environ.get("EDITOR") or ("nano" if shutil.which("nano") else "")
+        if not editor:
+            print("Aucun éditeur : installe nano (pkg install nano) ou utilise --fichier.")
+            return 1
+        try:
+            subprocess.run([editor, path.name], check=True)
+        except (OSError, subprocess.CalledProcessError):
+            print("L'éditeur ne s'est pas lancé correctement : rien n'est modifié.")
+            return 1
+        file = path.name
+    try:
+        parsed = _parse_edit(open(file, encoding="utf-8").read())
+    except OSError:
+        print(f"Fichier illisible : {file}")
+        return 1
+    if parsed is None or not all(parsed):
+        print(f"Texte refusé : garde les repères {EDIT_VOICE} et {EDIT_CAPTION}, sans les vider.")
+        return 1
+    script, caption = parsed
+    if (script, caption) == (draft.script, draft.caption):
+        print("Aucun changement.")
+        return 0
+    alerts = content.local_alerts(script, "", config.content.tone)
+    alerts += [a for a in content.local_alerts(caption, "", config.content.tone) if a not in alerts]
+    review = draft.review + "\nTexte corrigé à la main : relecture IA et chiffres à revérifier avec les sources."
+    memory.update_draft_text(draft_id, script, caption, review)
+    words = len(script.split())
+    print(f"Brouillon #{draft_id} mis à jour ({words} mots, soit environ {round(words / 2.5)} s de voix).")
+    for alert in alerts:
+        print(f"Alerte : {alert}")
+    if draft.video_path:
+        print("L'ancienne vidéo ne correspond plus au texte : refais-la avec la commande video.")
     return 0
 
 
@@ -253,6 +328,9 @@ def main(argv: list[str] | None = None) -> int:
     video.add_argument("id", type=int)
     video.add_argument("--sans-images", action="store_true", help="fond sombre généré, sans images")
     video.add_argument("--fps", type=int, help="images par seconde pour cet essai (15 à 60), ex. 30 pour aller plus vite")
+    edit = sub.add_parser("edit", help="corrige la voix off et la légende d'un brouillon")
+    edit.add_argument("id", type=int)
+    edit.add_argument("--fichier", help="lit le texte corrigé dans ce fichier au lieu d'ouvrir l'éditeur")
     sub.add_parser("drafts", help="liste les brouillons")
     show = sub.add_parser("show", help="affiche un brouillon")
     show.add_argument("id", type=int)
@@ -276,6 +354,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_run(config, args.duree)
     if args.command == "video":
         return _cmd_video(config, args.id, not args.sans_images, args.fps)
+    if args.command == "edit":
+        return _cmd_edit(config, args.id, args.fichier)
     if args.command == "drafts":
         return _cmd_drafts(config)
     if args.command == "show":

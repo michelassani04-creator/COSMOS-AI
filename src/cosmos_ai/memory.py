@@ -99,6 +99,14 @@ class EditorialMemory:
         self._db.execute("UPDATE drafts SET video_path = ? WHERE id = ?", (path, draft_id))
         self._db.commit()
 
+    def update_draft_text(self, draft_id: int, script: str, caption: str, review: str) -> None:
+        """Remplace le texte corrigé à la main ; l'ancienne vidéo ne correspond plus au texte."""
+        self._db.execute(
+            "UPDATE drafts SET script = ?, caption = ?, review = ?, video_path = '' WHERE id = ?",
+            (script, caption, review, draft_id),
+        )
+        self._db.commit()
+
     def list_drafts(self, status: str | None = None) -> list[Draft]:
         if status is None:
             rows = self._db.execute("SELECT * FROM drafts ORDER BY id").fetchall()

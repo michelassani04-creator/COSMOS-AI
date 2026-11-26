@@ -38,9 +38,15 @@ class NasaImageSource:
 
     name = "nasa-images"
 
-    def __init__(self, transport: Transport | None = None, timeout: float = 20.0) -> None:
+    def __init__(
+        self,
+        transport: Transport | None = None,
+        timeout: float = 20.0,
+        opener: Callable | None = None,
+    ) -> None:
         self._transport = transport or UrllibTransport()
         self._timeout = timeout
+        self._opener = opener or _default_open
 
     def search(self, query: str, limit: int = 5) -> list[MediaAsset]:
         return self._search(query, limit, "image")
@@ -49,7 +55,8 @@ class NasaImageSource:
         self, asset: MediaAsset, stem: Path, *, quality: str = "haute", max_bytes: int = MAX_VIDEO_BYTES
     ) -> Path:
         return download_video(
-            asset.path, stem, transport=self._transport, quality=quality, max_bytes=max_bytes
+            asset.path, stem, transport=self._transport, quality=quality, max_bytes=max_bytes,
+            opener=self._opener,
         )
 
     def search_videos(self, query: str, limit: int = 3) -> list[MediaAsset]:
